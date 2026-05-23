@@ -22,6 +22,10 @@
           {{ form.handles(class="form-control form-control-sm", placeholder="e.g. transcript, certificate, academic record") }}
           <small class="text-muted">Comma-separated keywords for AI officer matching</small>
         </div>
+        <div class="mb-2">
+          {{ form.room.label(class="form-label small fw-semibold") }}
+          {{ form.room(class="form-control form-control-sm", placeholder="e.g. Admin Building, Room 313") }}
+        </div>
         <hr class="my-2">
         <p class="small text-muted mb-1"><i class="fas fa-key me-1"></i>Officer Portal Login</p>
         <div class="mb-2">
@@ -82,6 +86,11 @@
             <td class="ps-3 fw-semibold">
               {{ officer.name }}<br>
               <small class="text-muted">{{ officer.designation }}</small>
+              {% if officer.room %}
+              <br><small class="text-muted" style="font-size:.75rem;">
+                <i class="fas fa-map-marker-alt me-1"></i>{{ officer.room }}
+              </small>
+              {% endif %}
               {% if officer.handles %}
               <br><small class="text-muted" style="font-size:.7rem;">
                 <i class="fas fa-tags me-1"></i>{{ officer.handles[:60] }}{% if officer.handles|length > 60 %}…{% endif %}
@@ -106,7 +115,7 @@
             </td>
             <td class="text-end pe-3">
               <div class="d-flex gap-1 justify-content-end flex-wrap">
-                <!-- Edit — data-* attributes avoid quote-escaping issues -->
+                <!-- Edit -->
                 <button class="btn btn-sm btn-outline-primary btn-edit-officer"
                   title="Edit Officer"
                   data-id="{{ officer.id }}"
@@ -178,7 +187,7 @@
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Room / Location</label>
-              <input type="text" name="edit_room" id="editRoom" class="form-control form-control-sm" placeholder="e.g. Committee Room, VC Office">
+              <input type="text" name="edit_room" id="editRoom" class="form-control form-control-sm" placeholder="e.g. Admin Building, Room 313">
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Photo Filename</label>
