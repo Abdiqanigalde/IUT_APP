@@ -307,13 +307,12 @@ def delete_officer(officer_id):
         flash('Officer not found.', 'danger')
         return redirect(url_for('admin.manage_officers'))
 
-    # Cancel all appointments related to this officer
     appointments = Appointment.query.filter_by(officer_id=officer_id).all()
 
     for apt in appointments:
         apt.status = 'Cancelled'
+        apt.officer_id = None
         apt.rejection_note = f'Officer {officer.name} was removed from the system.'
-
         db.session.add(Notification(
             user_id=apt.user_id,
             message=f'Your appointment with {officer.name} on '
@@ -321,30 +320,18 @@ def delete_officer(officer_id):
                     f'because the officer was removed.'
         ))
 
-    # Delete linked officer login account
-    linked_user = User.query.filter_by(
-        email=officer.email,
-        role='officer'
-    ).first()
+    linked_user = User.query.filter_by(email=officer.email, role='officer').first()
 
-    log_action(
-        'officer_deleted',
-        f'Deleted {officer.name} — {len(appointments)} appointment(s) cancelled'
-    )
+    log_action('officer_deleted',
+               f'Deleted {officer.name} — {len(appointments)} appointment(s) cancelled')
 
     db.session.delete(officer)
-
     if linked_user:
         db.session.delete(linked_user)
 
     db.session.commit()
 
-    flash(
-        f'Officer removed successfully. '
-        f'{len(appointments)} appointment(s) cancelled.',
-        'success'
-    )
-
+    flash(f'Officer removed successfully. {len(appointments)} appointment(s) cancelled.', 'success')
     return redirect(url_for('admin.manage_officers'))
 # ── Edit Officer ──────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/officers/<int:officer_id>/edit', methods=['POST'])
