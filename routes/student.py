@@ -964,3 +964,257 @@ def ai_suggest():
         'date':            str(preferred_date),
         'recommendations': result,
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Cal.com-style booking routes — added for modern UI
+# ══════════════════════════════════════════════════════════════════════════════
+
+@student_bp.route('/student/book-calcom', methods=['GET'])
+@login_required
+def book_calcom():
+    """Cal.com-style booking page — multi-step: choose officer → date/time → confirm."""
+    if current_user.role != 'student':
+        return redirect(url_for('index'))
+    from forms import AppointmentForm
+    form = AppointmentForm()
+    officers = Officer.query.filter_by(is_active=True).all()
+    return render_template('student/book_calcom.html', form=form, officers=officers)
+
+
+@student_bp.route('/student/book-calcom/submit', methods=['POST'])
+@login_required
+def book_calcom_submit():
+    """Process the Cal.com booking form submission."""
+    if current_user.role != 'student':
+        return redirect(url_for('index'))
+
+    officer_id   = request.form.get('officer_id', type=int)
+    date_str     = request.form.get('date', '').strip()
+    time_str     = request.form.get('time', '').strip()
+    duration     = request.form.get('duration', 15, type=int)
+    meeting_type = request.form.get('meeting_type', 'in_person').strip()
+    issue        = request.form.get('issue', '').strip()
+    student_name = request.form.get('student_name', current_user.name).strip()
+    student_id   = request.form.get('student_id_num', current_user.student_id_num or '').strip()
+    department   = request.form.get('department', current_user.department or '').strip()
+
+    # ── Validate inputs ───────────────────────────────────────────────────────
+    if not all([officer_id, date_str, time_str, issue, student_id, department]):
+        flash('Please fill in all required fields.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    try:
+        booking_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        flash('Invalid date.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    officer = db.session.get(Officer, officer_id)
+    if not officer:
+        flash('Officer not found.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    day_name = booking_date.strftime('%A')
+
+    # ── Day-off / unavailability / limit checks ───────────────────────────────
+    if is_day_off(officer, booking_date):
+        flash(f'{officer.name} does not take appointments on {day_name}s.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    unavail = get_unavailability(officer.id, booking_date)
+    if unavail:
+        flash(f'{officer.name} is unavailable: {unavail.reason}', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    if officer.daily_limit > 0 and daily_count(officer.id, booking_date) >= officer.daily_limit:
+        flash(f'{officer.name} has reached the max appointments for that day.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    # ── Student self-conflict ─────────────────────────────────────────────────
+    student_conflict = Appointment.query.filter_by(
+        user_id=current_user.id, date=booking_date, time=time_str,
+    ).filter(Appointment.status.in_(['Pending', 'Approved'])).first()
+    if student_conflict:
+        flash('You already have an appointment at this time.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    # ── Slot collision check ──────────────────────────────────────────────────
+    taken = slot_appointment(officer.id, booking_date, time_str)
+    if taken:
+        waiters = WaitlistEntry.query.filter_by(
+            officer_id=officer.id, slot_date=booking_date, slot_time=time_str,
+        ).count()
+        flash(f'That slot was just taken ({waiters} waiting). Please choose another.', 'warning')
+        return redirect(url_for('student.book_calcom'))
+
+    # ── Create appointment ────────────────────────────────────────────────────
+    apt = Appointment(
+        user_id        = current_user.id,
+        student_name   = student_name,
+        student_id_num = student_id,
+        department     = department,
+        officer_id     = officer.id,
+        day            = day_name,
+        date           = booking_date,
+        time           = time_str,
+        issue          = issue,
+        status         = 'Pending',
+        duration       = max(5, min(duration, 480)),
+        meeting_type   = meeting_type,
+        location       = officer.room or '',
+        timezone       = 'Asia/Dhaka',
+        notes          = issue,
+    )
+    db.session.add(apt)
+    current_user.student_id_num = student_id
+    current_user.department     = department
+    db.session.flush()
+    apt.qr_code_data = build_qr_data(apt)
+
+    from models import AppointmentTimeline, AppointmentHistory
+    db.session.add(AppointmentTimeline(
+        appointment_id = apt.id,
+        status         = 'Booked',
+        note           = f'Booked via Cal.com UI. Duration: {duration}min, Type: {meeting_type}.'
+    ))
+    db.session.add(AppointmentHistory(
+        appointment_id = apt.id,
+        action         = 'created',
+        new_value      = f'{booking_date} {time_str} with {officer.name}',
+        changed_by     = current_user.id,
+        note           = 'Appointment created via modern booking flow.'
+    ))
+
+    db.session.commit()
+
+    from utils import send_email, booking_confirmation_email
+    send_email(
+        "Appointment Booked — IUT Appointments",
+        [current_user.email],
+        booking_confirmation_email(apt, current_user)
+    )
+
+    flash('Appointment booked successfully! Pending approval.', 'success')
+    return redirect(url_for('student.dashboard'))
+
+
+@student_bp.route('/api/slots/calcom')
+@login_required
+def get_slots_calcom():
+    """
+    Duration-aware slot API for Cal.com booking UI.
+    Generates slots based on selected duration and removes any overlapping booked slots.
+    """
+    officer_id  = request.args.get('officer', type=int)
+    date_str    = request.args.get('date', '')
+    duration    = request.args.get('duration', 15, type=int)
+    duration    = max(5, min(duration, 480))
+
+    if not officer_id or not date_str:
+        return jsonify({'unavailable': False, 'slots': []})
+
+    try:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'unavailable': False, 'slots': []})
+
+    officer = db.session.get(Officer, officer_id)
+    if not officer:
+        return jsonify({'unavailable': False, 'slots': []})
+
+    # Off / unavailable checks
+    if is_day_off(officer, date_obj):
+        return jsonify({'unavailable': True, 'reason': 'Day off', 'slots': []})
+
+    unavail = get_unavailability(officer_id, date_obj)
+    if unavail:
+        return jsonify({'unavailable': True, 'reason': unavail.reason, 'slots': []})
+
+    # Determine work window for the day
+    weekday  = date_obj.weekday()
+    override = next((wh for wh in officer.working_hours if wh.weekday == weekday), None)
+    if override:
+        work_start_str, work_end_str = override.start_time, override.end_time
+    else:
+        work_start_str = officer.work_start or '08:00'
+        work_end_str   = officer.work_end   or '17:00'
+
+    # Parse work window
+    def parse_hm(s):
+        h, m = map(int, s.split(':'))
+        return h * 60 + m
+
+    ws = parse_hm(work_start_str)
+    we = parse_hm(work_end_str)
+
+    # Get all booked slots for the day and their durations
+    booked_apts = Appointment.query.filter(
+        Appointment.officer_id == officer_id,
+        Appointment.date == date_obj,
+        Appointment.status.in_(['Pending', 'Approved'])
+    ).all()
+
+    # Convert booked appointments to (start_min, end_min) blocks
+    def parse_time_str(t):
+        """Parse '8:00 AM', '08:00', '08:00 AM' → minutes from midnight."""
+        t = t.strip()
+        if 'AM' in t.upper() or 'PM' in t.upper():
+            from datetime import datetime as _dt
+            try:
+                return _dt.strptime(t, '%I:%M %p').hour * 60 + _dt.strptime(t, '%I:%M %p').minute
+            except:
+                try:
+                    return _dt.strptime(t, '%I:%M%p').hour * 60 + _dt.strptime(t, '%I:%M%p').minute
+                except:
+                    pass
+        try:
+            h, m = map(int, t.split(':'))
+            return h * 60 + m
+        except:
+            return -1
+
+    booked_blocks = []
+    for apt in booked_apts:
+        start = parse_time_str(apt.time)
+        dur   = apt.duration if apt.duration else 15
+        if start >= 0:
+            booked_blocks.append((start, start + dur))
+
+    # Generate duration-aligned slots
+    slots = []
+    cur = ws
+    now_min = -1
+    today = datetime.now().date()
+    now_total = datetime.now().hour * 60 + datetime.now().minute if date_obj == today else -1
+
+    while cur + duration <= we:
+        slot_end = cur + duration
+        h, m = divmod(cur, 60)
+        time_str = f"{h:02d}:{m:02d}"
+
+        # Check if this slot overlaps any booked block
+        overlap = any(
+            not (slot_end <= b[0] or cur >= b[1])
+            for b in booked_blocks
+        )
+
+        # Check waiters for THIS exact slot time
+        waiters = WaitlistEntry.query.filter_by(
+            officer_id=officer_id,
+            slot_date=date_obj,
+            slot_time=time_str,
+        ).count()
+
+        # Past time check
+        is_past = (date_obj == today and cur <= now_total)
+
+        slots.append({
+            'time':      time_str,
+            'available': not overlap and not is_past,
+            'waiters':   waiters,
+        })
+
+        cur += duration
+
+    return jsonify({'unavailable': False, 'slots': slots})
