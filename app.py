@@ -196,7 +196,6 @@ with app.app_context():
         inspector2 = sa_inspect2(db.engine)
         is_pg2     = 'postgresql' in str(db.engine.url)
 
-        # Add new columns to appointment table
         apt_cols = {c['name'] for c in inspector2.get_columns('appointment')}
         new_cols = {
             'duration':     'INTEGER DEFAULT 15',
@@ -212,7 +211,6 @@ with app.app_context():
                     print(f'[IUT] Cal.com migration: added appointment.{col}')
             conn.commit()
 
-        # Create appointment_history table if it doesn't exist
         all_tables = inspector2.get_table_names()
         if 'appointment_history' not in all_tables:
             with db.engine.connect() as conn:
@@ -249,6 +247,38 @@ with app.app_context():
 
     except Exception as _calcom_err:
         print(f'[IUT] Cal.com migration error (non-fatal): {_calcom_err}')
+
+    # ── officer_id nullable migration ─────────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect3
+        inspector3 = sa_inspect3(db.engine)
+        is_pg3     = 'postgresql' in str(db.engine.url)
+
+        if is_pg3:
+            with db.engine.connect() as conn:
+                # Check if the NOT NULL constraint still exists
+                result = conn.execute(text("""
+                    SELECT is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'appointment'
+                    AND column_name  = 'officer_id'
+                """)).fetchone()
+
+                if result and result[0] == 'NO':
+                    conn.execute(text(
+                        'ALTER TABLE appointment ALTER COLUMN officer_id DROP NOT NULL'
+                    ))
+                    conn.commit()
+                    print('[IUT] officer_id nullable migration: done ✅')
+                else:
+                    print('[IUT] officer_id nullable migration: already applied — skipping.')
+        else:
+            # SQLite doesn't enforce NOT NULL changes easily, but db.create_all()
+            # won't re-add it since the model now has nullable=True
+            print('[IUT] officer_id nullable migration: SQLite — skipping (handled by model).')
+
+    except Exception as _nullable_err:
+        print(f'[IUT] officer_id nullable migration error (non-fatal): {_nullable_err}')
 
 
 # ── Session timeout ───────────────────────────────────────────────────────────
