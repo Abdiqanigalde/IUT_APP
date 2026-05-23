@@ -49,7 +49,7 @@ db.init_app(app)
 migrate  = Migrate(app, db)
 bcrypt   = Bcrypt(app)
 mail     = Mail(app)
-socketio = SocketIO(app, cors_allowed_origins='*')
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 limiter = Limiter(
     get_remote_address,
