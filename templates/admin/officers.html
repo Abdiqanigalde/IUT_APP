@@ -106,20 +106,19 @@
             </td>
             <td class="text-end pe-3">
               <div class="d-flex gap-1 justify-content-end flex-wrap">
-                <!-- Edit -->
-                <button class="btn btn-sm btn-outline-primary" title="Edit Officer"
-                  onclick="openEditModal(
-                    {{ officer.id }},
-                    {{ officer.name | tojson }},
-                    {{ officer.designation | tojson }},
-                    {{ (officer.handles or '') | tojson }},
-                    {{ (officer.room or '') | tojson }},
-                    {{ (officer.photo_url or '') | tojson }},
-                    {{ (officer.work_start or '08:00') | tojson }},
-                    {{ (officer.work_end or '17:00') | tojson }},
-                    {{ officer.daily_limit }},
-                    {{ '1' if officer.is_active else '0' }}
-                  )">
+                <!-- Edit — data-* attributes avoid quote-escaping issues -->
+                <button class="btn btn-sm btn-outline-primary btn-edit-officer"
+                  title="Edit Officer"
+                  data-id="{{ officer.id }}"
+                  data-name="{{ officer.name | e }}"
+                  data-designation="{{ officer.designation | e }}"
+                  data-handles="{{ (officer.handles or '') | e }}"
+                  data-room="{{ (officer.room or '') | e }}"
+                  data-photo="{{ (officer.photo_url or '') | e }}"
+                  data-work-start="{{ officer.work_start or '08:00' }}"
+                  data-work-end="{{ officer.work_end or '17:00' }}"
+                  data-daily-limit="{{ officer.daily_limit }}"
+                  data-is-active="{{ '1' if officer.is_active else '0' }}">
                   <i class="fas fa-edit"></i>
                 </button>
                 <!-- Working Hours -->
@@ -158,8 +157,6 @@
       </div>
       <form method="POST" id="editOfficerForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="_method" value="EDIT">
-        <input type="hidden" name="officer_id" id="editOfficerId">
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6">
@@ -221,19 +218,21 @@
 </div>
 
 <script>
-function openEditModal(id, name, designation, handles, room, photo, workStart, workEnd, dailyLimit, isActive) {
-  document.getElementById('editOfficerId').value    = id;
-  document.getElementById('editName').value         = name;
-  document.getElementById('editDesignation').value  = designation;
-  document.getElementById('editHandles').value      = handles;
-  document.getElementById('editRoom').value         = room;
-  document.getElementById('editPhotoUrl').value     = photo;
-  document.getElementById('editWorkStart').value    = workStart;
-  document.getElementById('editWorkEnd').value      = workEnd;
-  document.getElementById('editDailyLimit').value   = dailyLimit;
-  document.getElementById('editIsActive').value     = isActive;
-  document.getElementById('editOfficerForm').action = '/admin/officers/' + id + '/edit';
-  new bootstrap.Modal(document.getElementById('editOfficerModal')).show();
-}
+document.querySelectorAll('.btn-edit-officer').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var d = this.dataset;
+    document.getElementById('editName').value        = d.name;
+    document.getElementById('editDesignation').value = d.designation;
+    document.getElementById('editHandles').value     = d.handles;
+    document.getElementById('editRoom').value        = d.room;
+    document.getElementById('editPhotoUrl').value    = d.photo;
+    document.getElementById('editWorkStart').value   = d.workStart;
+    document.getElementById('editWorkEnd').value     = d.workEnd;
+    document.getElementById('editDailyLimit').value  = d.dailyLimit;
+    document.getElementById('editIsActive').value    = d.isActive;
+    document.getElementById('editOfficerForm').action = '/admin/officers/' + d.id + '/edit';
+    new bootstrap.Modal(document.getElementById('editOfficerModal')).show();
+  });
+});
 </script>
 {% endblock %}
