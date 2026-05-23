@@ -6,7 +6,7 @@
         <a href="{{ url_for('student.export_pdf') }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-file-pdf me-1"></i>Export PDF
         </a>
-        <a href="{{ url_for('student.book_appointment') }}" class="btn btn-primary btn-sm">
+        <a href="{{ url_for('student.book_calcom') }}" class="btn btn-primary btn-sm">
             <i class="fas fa-plus me-1"></i>Book New
         </a>
     </div>
@@ -114,7 +114,7 @@
                     <tr>
                         <td colspan="6" class="text-center py-5 text-muted">
                             <i class="fas fa-calendar-times fa-3x mb-3 d-block"></i>
-                            No appointments found. <a href="{{ url_for('student.book_appointment') }}">Book one now!</a>
+                            No appointments found. <a href="{{ url_for('student.book_calcom') }}">Book one now!</a>
                         </td>
                     </tr>
                 {% endif %}
