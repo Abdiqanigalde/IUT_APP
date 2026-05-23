@@ -15,6 +15,3 @@ gunicorn==22.0.0
 python-socketio==5.11.2
 dnspython==2.6.1
 psycopg[binary]==3.3.4
-eventlet
-gevent
-gevent-websocket
