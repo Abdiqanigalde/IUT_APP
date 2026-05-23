@@ -1,0 +1,154 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2 class="fw-bold mb-0">My Appointments</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('student.export_pdf') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-file-pdf me-1"></i>Export PDF
+        </a>
+        <a href="{{ url_for('student.book_appointment') }}" class="btn btn-primary btn-sm">
+            <i class="fas fa-plus me-1"></i>Book New
+        </a>
+    </div>
+</div>
+
+{% if notifications %}
+<div class="alert alert-info alert-dismissible fade show mb-4">
+    <h6 class="alert-heading"><i class="fas fa-bell me-2"></i>New Notifications</h6>
+    <ul class="mb-1 ps-3">
+        {% for n in notifications %}
+        <li>{{ n.message }} <small class="text-muted">({{ n.created_at.strftime('%d %b %H:%M') if n.created_at else 'N/A' }})</small></li>
+        {% endfor %}
+    </ul>
+    <a href="{{ url_for('student.read_all_notifications') }}" class="btn btn-sm btn-outline-info mt-1">Mark all read</a>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Search / filter bar -->
+<div class="card mb-4 p-3">
+    <form method="GET" class="row g-2 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label small mb-1 fw-semibold">Officer</label>
+            <input type="text" name="officer" class="form-control form-control-sm" placeholder="Search officer…" value="{{ search_officer }}">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-1 fw-semibold">Status</label>
+            <select name="status" class="form-select form-select-sm">
+                <option value="">All</option>
+                {% for s in ['Pending','Approved','Rejected','Completed'] %}
+                <option {{ 'selected' if search_status == s }}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-1 fw-semibold">Date</label>
+            <input type="date" name="date" class="form-control form-control-sm" value="{{ search_date }}">
+        </div>
+        <div class="col-md-2 d-flex gap-1">
+            <button class="btn btn-primary btn-sm w-100"><i class="fas fa-search me-1"></i>Filter</button>
+            <a href="{{ url_for('student.dashboard') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i></a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Officer</th>
+                        <th>Date</th>
+                        <th>Time Slot</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% if appointments %}
+                    {% for apt in appointments %}
+                    <tr>
+                        <td class="ps-4 fw-medium">{{ apt.officer.name }}<br><small class="text-muted">{{ apt.officer.designation }}</small></td>
+                        <td>{{ apt.date.strftime('%d %b %Y') if apt.date else 'N/A' }}<br><small class="text-muted">{{ apt.day }}</small></td>
+                        <td>{{ apt.time }}</td>
+                        <td><span class="text-truncate d-inline-block" style="max-width:180px" title="{{ apt.issue }}">{{ apt.issue }}</span></td>
+                        <td><span class="badge-status status-{{ apt.status.lower() }}">{{ apt.status }}</span></td>
+                        <td class="text-end pe-4">
+                            <div class="d-flex gap-1 justify-content-end flex-wrap">
+                                <a href="{{ url_for('student.print_slip', appointment_id=apt.id) }}" class="btn btn-sm btn-outline-secondary" title="Print Slip" target="_blank">
+                                    <i class="fas fa-print"></i>
+                                </a>
+                                {% if apt.status in ['Pending','Approved'] %}
+                                <a href="{{ url_for('student.reschedule_appointment', appointment_id=apt.id) }}" class="btn btn-sm btn-outline-primary" title="Reschedule">
+                                    <i class="fas fa-calendar-edit"></i>
+                                </a>
+                                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelModal{{ apt.id }}" title="Cancel">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Cancel Modal -->
+                    <div class="modal fade" id="cancelModal{{ apt.id }}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Cancel Appointment</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    Cancel appointment with <strong>{{ apt.officer.name }}</strong> on <strong>{{ apt.date.strftime('%d %b %Y') if apt.date else 'N/A' }}</strong> at <strong>{{ apt.time }}</strong>?
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Keep it</button>
+                                    <a href="{{ url_for('student.cancel_appointment', appointment_id=apt.id) }}" class="btn btn-danger btn-sm">Yes, Cancel</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted">
+                            <i class="fas fa-calendar-times fa-3x mb-3 d-block"></i>
+                            No appointments found. <a href="{{ url_for('student.book_appointment') }}">Book one now!</a>
+                        </td>
+                    </tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Waitlist entries -->
+{% set my_waitlist = current_user.waitlist_entries %}
+{% if my_waitlist %}
+<h5 class="fw-bold mt-5 mb-3"><i class="fas fa-clock me-2 text-warning"></i>My Waitlist</h5>
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr><th class="ps-4">Officer</th><th>Date</th><th>Time</th><th>Joined</th><th class="text-end pe-4">Action</th></tr>
+            </thead>
+            <tbody>
+            {% for w in my_waitlist %}
+            <tr>
+                <td class="ps-4">{{ w.appointment.officer.name }}</td>
+                <td>{{ w.appointment.date.strftime('%d %b %Y') if w.appointment.date else 'N/A' }}</td>
+                <td>{{ w.appointment.time }}</td>
+                <td><small class="text-muted">{{ w.joined_at.strftime('%d %b %H:%M') if w.joined_at else 'N/A' }}</small></td>
+                <td class="text-end pe-4">
+                    <a href="{{ url_for('student.leave_waitlist', entry_id=w.id) }}" class="btn btn-sm btn-outline-danger">Leave</a>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="text-center py-5">
+  <div style="font-size:6rem;font-weight:800;color:#fff3cd;">403</div>
+  <h2 class="fw-bold">Access Denied</h2>
+  <p class="text-muted mb-4">You don't have permission to access this page.</p>
+  <a href="{{ url_for('index') }}" class="btn btn-primary"><i class="fas fa-home me-2"></i>Go Home</a>
+</div>
+{% endblock %}

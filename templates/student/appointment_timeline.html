@@ -1,0 +1,269 @@
+{% extends "layout.html" %}
+
+{% block title %}Appointment Timeline{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1 class="mb-4">Appointment History</h1>
+        </div>
+    </div>
+
+    {% if appointments %}
+    <div class="row">
+        <div class="col-md-12">
+            <div class="timeline">
+                {% for appointment in appointments %}
+                <div class="timeline-item">
+                    <div class="timeline-marker" style="background-color: {% if appointment.status == 'Completed' %}#28a745{% elif appointment.status == 'Cancelled' %}#dc3545{% elif appointment.status == 'In Progress' %}#ffc107{% else %}#0056b3{% endif %};">
+                        {% if appointment.status == 'Completed' %}
+                            ✓
+                        {% elif appointment.status == 'Cancelled' %}
+                            ✕
+                        {% elif appointment.status == 'In Progress' %}
+                            ⟳
+                        {% else %}
+                            ⏱
+                        {% endif %}
+                    </div>
+                    <div class="timeline-content">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0">
+                                    {{ appointment.officer.name }}
+                                    <span class="badge" style="background-color: {% if appointment.status == 'Completed' %}#28a745{% elif appointment.status == 'Cancelled' %}#dc3545{% elif appointment.status == 'In Progress' %}#ffc107{% else %}#0056b3{% endif %};">
+                                        {{ appointment.status }}
+                                    </span>
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Date:</strong> {{ appointment.date }}</p>
+                                        <p><strong>Time:</strong> {{ appointment.time }}</p>
+                                        <p><strong>Priority:</strong> {{ appointment.priority }}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>Issue:</strong> {{ appointment.issue }}</p>
+                                        <p><strong>Booked on:</strong> {{ appointment.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                                    </div>
+                                </div>
+
+                                <!-- Timeline Events -->
+                                {% if appointment.timeline_events %}
+                                <hr>
+                                <h6>Status History:</h6>
+                                <div class="status-history">
+                                    {% for event in appointment.timeline_events|reverse %}
+                                    <div class="status-event">
+                                        <span class="event-date">{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                                        <span class="event-status">{{ event.status }}</span>
+                                        {% if event.note %}
+                                        <p class="event-note">{{ event.note }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+
+                                <!-- Feedback -->
+                                {% if appointment.feedback %}
+                                <hr>
+                                <h6>Your Feedback:</h6>
+                                <div class="feedback-section">
+                                    <div class="rating">
+                                        {% for i in range(1, 6) %}
+                                            {% if i <= appointment.feedback.rating %}
+                                            <span class="star filled">★</span>
+                                            {% else %}
+                                            <span class="star">★</span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                    {% if appointment.feedback.comments %}
+                                    <p class="feedback-comments">{{ appointment.feedback.comments }}</p>
+                                    {% endif %}
+                                </div>
+                                {% elif appointment.status == 'Completed' %}
+                                <hr>
+                                <a href="/student/feedback/{{ appointment.id }}" class="btn btn-sm btn-primary">Leave Feedback</a>
+                                {% endif %}
+
+                                <!-- Actions -->
+                                <hr>
+                                <div class="action-buttons">
+                                    {% if appointment.status in ['Pending', 'Approved'] %}
+                                    <a href="/student/reschedule/{{ appointment.id }}" class="btn btn-sm btn-warning">Reschedule</a>
+                                    <a href="/student/cancel/{{ appointment.id }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')">Cancel</a>
+                                    {% endif %}
+                                    <a href="/student/appointment/{{ appointment.id }}/print" class="btn btn-sm btn-info">Print Slip</a>
+                                    <a href="/student/appointment/{{ appointment.id }}/download-qr" class="btn btn-sm btn-secondary">Download QR Code</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        You don't have any appointments yet. <a href="/student/officers">Browse officers</a> to book one.
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .timeline {
+        position: relative;
+        padding: 20px 0;
+    }
+
+    .timeline-item {
+        display: flex;
+        margin-bottom: 30px;
+        position: relative;
+    }
+
+    .timeline-marker {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.5rem;
+        font-weight: bold;
+        flex-shrink: 0;
+        margin-right: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .timeline-content {
+        flex: 1;
+    }
+
+    .timeline-item:not(:last-child)::before {
+        content: '';
+        position: absolute;
+        left: 24px;
+        top: 50px;
+        bottom: -30px;
+        width: 2px;
+        background-color: #ddd;
+    }
+
+    body.dark-mode .timeline-item:not(:last-child)::before {
+        background-color: #444;
+    }
+
+    .status-history {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-top: 10px;
+    }
+
+    body.dark-mode .status-history {
+        background-color: #333;
+    }
+
+    .status-event {
+        padding: 8px 0;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    body.dark-mode .status-event {
+        border-bottom-color: #444;
+    }
+
+    .status-event:last-child {
+        border-bottom: none;
+    }
+
+    .event-date {
+        font-size: 0.85rem;
+        color: #666;
+        margin-right: 10px;
+    }
+
+    body.dark-mode .event-date {
+        color: #999;
+    }
+
+    .event-status {
+        font-weight: 600;
+        color: #0056b3;
+    }
+
+    .event-note {
+        font-size: 0.9rem;
+        color: #555;
+        margin: 5px 0 0 0;
+    }
+
+    body.dark-mode .event-note {
+        color: #aaa;
+    }
+
+    .feedback-section {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-top: 10px;
+    }
+
+    body.dark-mode .feedback-section {
+        background-color: #333;
+    }
+
+    .rating {
+        margin-bottom: 10px;
+    }
+
+    .star {
+        font-size: 1.5rem;
+        color: #ddd;
+        margin-right: 5px;
+    }
+
+    .star.filled {
+        color: #ffc107;
+    }
+
+    .feedback-comments {
+        font-size: 0.95rem;
+        color: #555;
+        margin-top: 10px;
+    }
+
+    body.dark-mode .feedback-comments {
+        color: #aaa;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    @media (max-width: 768px) {
+        .timeline-item {
+            flex-direction: column;
+        }
+
+        .timeline-marker {
+            margin-right: 0;
+            margin-bottom: 15px;
+        }
+
+        .timeline-item:not(:last-child)::before {
+            left: 24px;
+            top: 50px;
+        }
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <h3 class="fw-bold mb-0">All Appointments</h3>
+  <a href="{{ url_for('admin.export_csv') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-download me-1"></i>Export CSV</a>
+</div>
+
+<div class="card mb-4 p-3">
+  <form method="GET" class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold mb-1">Officer</label>
+      <select name="officer" class="form-select form-select-sm">
+        <option value="">All Officers</option>
+        {% for o in all_officers %}<option {{ 'selected' if officer_filter == o.name }}>{{ o.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small fw-semibold mb-1">Status</label>
+      <select name="status" class="form-select form-select-sm">
+        <option value="">All</option>
+        {% for s in ['Pending','Approved','Rejected','Completed'] %}
+        <option {{ 'selected' if status_filter == s }}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold mb-1">Date</label>
+      <input type="date" name="date" class="form-control form-control-sm" value="{{ date_filter }}">
+    </div>
+    <div class="col-md-4 d-flex gap-1">
+      <button class="btn btn-primary btn-sm w-100"><i class="fas fa-search me-1"></i>Filter</button>
+      <a href="{{ url_for('admin.manage_appointments') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i></a>
+    </div>
+  </form>
+</div>
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <!-- Bulk action bar -->
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <select name="bulk_action" class="form-select form-select-sm" style="width:auto;">
+      <option value="Approved">Approve Selected</option>
+      <option value="Rejected">Reject Selected</option>
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-primary"
+            onclick="return confirm('Apply bulk action to selected appointments?')">
+      <i class="fas fa-check-double me-1"></i>Apply to Selected
+    </button>
+    <span class="text-muted small ms-2" id="selectedCount">0 selected</span>
+  </div>
+
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3"><input type="checkbox" id="selectAll" class="form-check-input"></th>
+              <th>Student</th><th>Officer</th><th>Date & Time</th><th>Reason</th><th>Status</th><th class="text-end pe-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% if appointments %}
+            {% for apt in appointments %}
+            <tr>
+              <td class="ps-3">
+                {% if apt.status == 'Pending' %}
+                <input type="checkbox" name="selected_ids" value="{{ apt.id }}" class="form-check-input row-check">
+                {% endif %}
+              </td>
+              <td>
+                <div class="fw-semibold">{{ apt.student_name }}</div>
+                <small class="text-muted">{{ apt.student_id_num }} · {{ apt.department }}</small>
+              </td>
+              <td>{{ apt.officer.name }}<br><small class="text-muted">{{ apt.officer.designation }}</small></td>
+              <td>{{ apt.date.strftime('%d %b %Y') if apt.date else 'N/A' }}<br><small class="text-muted">{{ apt.time }}</small></td>
+              <td>
+                <span class="text-truncate d-inline-block" style="max-width:140px" title="{{ apt.issue }}">{{ apt.issue }}</span>
+                {% if apt.rejection_note %}
+                <br><small class="text-danger"><i class="fas fa-comment me-1"></i>{{ apt.rejection_note[:60] }}{% if apt.rejection_note|length > 60 %}…{% endif %}</small>
+                {% endif %}
+              </td>
+              <td><span class="badge-status status-{{ apt.status.lower() }}">{{ apt.status }}</span></td>
+              <td class="text-end pe-3">
+                <div class="d-flex gap-1 justify-content-end">
+                  {% if apt.status == 'Pending' %}
+                    <a href="{{ url_for('admin.update_status', appointment_id=apt.id, status='Approved') }}" class="btn btn-xs btn-sm btn-outline-success" title="Approve"><i class="fas fa-check"></i></a>
+                    <a href="{{ url_for('admin.update_status', appointment_id=apt.id, status='Rejected') }}" class="btn btn-xs btn-sm btn-outline-danger" title="Reject with note"><i class="fas fa-times"></i></a>
+                  {% elif apt.status == 'Approved' %}
+                    <a href="{{ url_for('admin.update_status', appointment_id=apt.id, status='Completed') }}" class="btn btn-xs btn-sm btn-outline-primary" title="Complete"><i class="fas fa-check-double"></i></a>
+                    <a href="{{ url_for('admin.update_status', appointment_id=apt.id, status='Rejected') }}" class="btn btn-xs btn-sm btn-outline-danger" title="Reject"><i class="fas fa-times"></i></a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="7" class="text-center py-5 text-muted">No appointments found.</td></tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const selectAll = document.getElementById('selectAll');
+const checks = document.querySelectorAll('.row-check');
+const counter = document.getElementById('selectedCount');
+
+function updateCount() {
+  const n = document.querySelectorAll('.row-check:checked').length;
+  counter.textContent = n + ' selected';
+}
+selectAll.addEventListener('change', () => {
+  checks.forEach(c => c.checked = selectAll.checked);
+  updateCount();
+});
+checks.forEach(c => c.addEventListener('change', updateCount));
+</script>
+{% endblock %}

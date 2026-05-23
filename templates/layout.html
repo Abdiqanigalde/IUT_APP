@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="{{ 'dark' if current_user.is_authenticated and current_user.dark_mode else 'light' }}">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IUT APPOINTMENT — {{ title if title else "University Appointment System" }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --card-shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
+        }
+        body { font-family: 'Inter', sans-serif; }
+        .navbar { box-shadow: 0 2px 4px rgba(0,0,0,.05); }
+        .navbar-brand { font-weight: 700; color: var(--primary-color) !important; }
+        .card { border: none; border-radius: 12px; box-shadow: var(--card-shadow); }
+        .btn-primary { background-color: var(--primary-color); border: none; border-radius: 8px; font-weight: 500; }
+        .btn-primary:hover { background-color: var(--secondary-color); }
+        .nav-link { font-weight: 500; }
+        .status-pending  { background-color:#fff3cd; color:#856404; }
+        .status-approved { background-color:#d4edda; color:#155724; }
+        .status-rejected { background-color:#f8d7da; color:#721c24; }
+        .status-completed{ background-color:#cce5ff; color:#004085; }
+        .badge-status { padding:6px 12px; border-radius:20px; font-size:.8rem; font-weight:600; }
+        [data-bs-theme="dark"] .status-pending  { background-color:#3d2e00; color:#ffd760; }
+        [data-bs-theme="dark"] .status-approved { background-color:#0d2b14; color:#75e096; }
+        [data-bs-theme="dark"] .status-rejected { background-color:#2d0a0e; color:#f08090; }
+        [data-bs-theme="dark"] .status-completed{ background-color:#002244; color:#80bbff; }
+    </style>
+    {% block styles %}{% endblock %}
+</head>
+<body>
+<nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+        <a class="navbar-brand d-flex align-items-center" href="{{ url_for('index') }}">
+            <img src="{{ url_for('static', filename='iut_logo.png') }}" alt="IUT" height="38" class="me-2" style="object-fit:contain;">
+            IUT APPOINTMENT
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto align-items-center">
+                {% if current_user.is_authenticated %}
+                    {% if current_user.role == 'super_admin' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('super_admin.dashboard') }}"><i class="fas fa-shield-alt me-1"></i>Control Panel</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="fas fa-tachometer-alt me-1"></i>Admin View</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('super_admin.audit_log') }}"><i class="fas fa-history me-1"></i>Audit Log</a></li>
+                    {% elif current_user.role == 'admin' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="fas fa-tachometer-alt me-1"></i>Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_appointments') }}"><i class="fas fa-calendar-alt me-1"></i>Appointments</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_officers') }}"><i class="fas fa-users me-1"></i>Officers</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_students') }}"><i class="fas fa-user-graduate me-1"></i>Students</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.audit_log') }}"><i class="fas fa-clipboard-list me-1"></i>Audit</a></li>
+                    {% elif current_user.role == 'officer' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.dashboard') }}"><i class="fas fa-home me-1"></i>Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.schedule') }}"><i class="fas fa-calendar-alt me-1"></i>Schedule</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.scan_page') }}"><i class="fas fa-qrcode me-1"></i>Scan QR</a></li>
+                    {% else %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('student.dashboard') }}"><i class="fas fa-home me-1"></i>My Appointments</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('student.book_appointment') }}"><i class="fas fa-plus me-1"></i>Book New</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('student.officer_list') }}"><i class="fas fa-users me-1"></i>Officers</a></li>
+                    {% endif %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle position-relative" href="#" data-bs-toggle="dropdown">
+                            <i class="fas fa-user-circle me-1"></i>{{ current_user.name }}
+                            {% set unread = current_user.notifications | selectattr('is_read','equalto',false) | list %}
+                            {% if unread %}
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notif-badge" style="font-size:.6rem">{{ unread|length }}</span>
+                            {% else %}
+                            <span id="notif-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.6rem;display:none;"></span>
+                            {% endif %}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="{{ url_for('admin.profile') if current_user.role == 'admin' else url_for('student.profile') }}"><i class="fas fa-user-cog me-2"></i>Profile</a></li>
+                            {% if current_user.role == 'student' %}
+                            <li><a class="dropdown-item" href="{{ url_for('student.export_pdf') }}"><i class="fas fa-file-pdf me-2"></i>Export My History</a></li>
+                            {% endif %}
+                            <li>
+                                <a class="dropdown-item" href="#" id="darkModeToggle">
+                                    <i class="fas fa-moon me-2"></i>
+                                    {{ 'Light Mode' if current_user.dark_mode else 'Dark Mode' }}
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                        </ul>
+                    </li>
+                {% else %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.login') }}">Login</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.register') }}">Register</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4 mb-5">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message|safe }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</div>
+
+<footer class="py-3 text-center text-muted small border-top">
+    &copy; 2026 IUT University Appointment Management System
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+{% if current_user.is_authenticated %}
+// ── Real-time live updates via Socket.IO ─────────────────────────────────────
+const socket = io();
+socket.on('connect', () => {
+  socket.emit('join', { user_id: {{ current_user.id }} });
+});
+socket.on('appointment_update', (data) => {
+  // Show toast notification
+  const statusColors = { Approved: 'success', Rejected: 'danger', Completed: 'primary', Pending: 'warning' };
+  const color = statusColors[data.status] || 'secondary';
+  const toastEl = document.createElement('div');
+  toastEl.className = 'toast align-items-center text-white bg-' + color + ' border-0 position-fixed bottom-0 end-0 m-3';
+  toastEl.setAttribute('role', 'alert');
+  toastEl.style.zIndex = 9999;
+  toastEl.innerHTML = '<div class="d-flex"><div class="toast-body"><i class="fas fa-bell me-2"></i>' + data.message + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>';
+  document.body.appendChild(toastEl);
+  new bootstrap.Toast(toastEl, { delay: 5000 }).show();
+
+  // Update badge count
+  fetch('/api/notifications/unread-count')
+    .then(r => r.json())
+    .then(d => {
+      const badge = document.getElementById('notif-badge');
+      if (badge) badge.textContent = d.count > 0 ? d.count : '';
+    });
+});
+{% endif %}
+</script>
+<script>
+const darkModeToggle = document.getElementById('darkModeToggle');
+if (darkModeToggle) {
+    darkModeToggle.addEventListener('click', e => {
+        e.preventDefault();
+        fetch('/toggle-darkmode', {method:'POST', headers:{'X-CSRFToken': '{{ csrf_token() }}','Content-Type':'application/json'}})
+        .then(r => r.json()).then(() => location.reload());
+    });
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

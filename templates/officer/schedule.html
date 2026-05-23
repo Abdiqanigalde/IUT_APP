@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4><i class="fas fa-calendar-alt me-2 text-info"></i>My Upcoming Schedule</h4>
+  <a href="{{ url_for('officer.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Dashboard</a>
+</div>
+<div class="card">
+  <div class="card-body p-0">
+    {% if appointments %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Date</th><th>Time</th><th>Student</th><th>ID</th><th>Dept</th><th>Reason</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for apt in appointments %}
+          <tr>
+            <td>{{ apt.date.strftime('%a %d %b') }}</td>
+            <td>{{ apt.time }}</td>
+            <td>{{ apt.student_name }}</td>
+            <td><small class="text-muted">{{ apt.student_id_num }}</small></td>
+            <td><small>{{ apt.department }}</small></td>
+            <td><small>{{ apt.issue[:50] }}{% if apt.issue|length > 50 %}…{% endif %}</small></td>
+            <td><span class="badge badge-status status-{{ apt.status|lower }}">{{ apt.status }}</span></td>
+            <td>
+              {% if apt.status == 'Pending' %}
+              <a href="{{ url_for('officer.approve', apt_id=apt.id) }}" class="btn btn-sm btn-success"><i class="fas fa-check"></i></a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="fas fa-calendar-check fa-2x mb-2"></i><p>No upcoming appointments.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
