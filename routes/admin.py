@@ -360,19 +360,35 @@ def manage_hours(officer_id):
     days = ['Monday','Tuesday','Wednesday','Thursday','Friday']
     return render_template('admin/working_hours.html', officer=officer, form=form, hours=hours, days=days)
 
-@admin_bp.route('/admin/officer/hours/delete/<int:hours_id>')
+@admin_bp.route('/admin/officer/delete/<int:officer_id>')
 @login_required
 @admin_required
-def delete_hours(hours_id):
-    wh = db.session.get(OfficerWorkingHours, hours_id)
-    if not wh:
-        flash('Working hours record not found.', 'danger')
+def delete_officer(officer_id):
+    officer = db.session.get(Officer, officer_id)
+    if not officer:
+        flash('Officer not found.', 'danger')
         return redirect(url_for('admin.manage_officers'))
-    oid = wh.officer_id
-    db.session.delete(wh)
+
+    # Cancel all appointments for this officer first
+    apts = Appointment.query.filter_by(officer_id=officer_id).all()
+    for apt in apts:
+        apt.status = 'Cancelled'
+        apt.rejection_note = f'Officer {officer.name} was removed from the system.'
+        db.session.add(Notification(
+            user_id=apt.user_id,
+            message=f'Your appointment with {officer.name} on {apt.date.strftime("%d %b %Y")} was cancelled because the officer was removed.'
+        ))
+    db.session.flush()
+
+    # Delete linked user account
+    linked_user = User.query.filter_by(email=officer.email, role='officer').first()
+    log_action('officer_deleted', f"Deleted {officer.name} — {len(apts)} appointments cancelled")
+    db.session.delete(officer)
+    if linked_user:
+        db.session.delete(linked_user)
     db.session.commit()
-    flash('Override removed.', 'info')
-    return redirect(url_for('admin.manage_hours', officer_id=oid))
+    flash(f'Officer removed. {len(apts)} appointment(s) were cancelled.', 'info')
+    return redirect(url_for('admin.manage_officers'))
 
 # ── Unavailability ────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/officer/<int:officer_id>/unavailability', methods=['GET', 'POST'])
