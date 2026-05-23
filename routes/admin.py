@@ -327,7 +327,72 @@ def manage_appointments():
         status_filter=status_filter,
         date_filter=date_filter
     )
+# ─────────────────────────────────────────────────────────────
+# OFFICERS
+# ─────────────────────────────────────────────────────────────
+@admin_bp.route('/admin/officers', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_officers():
 
+    form = OfficerProfileForm()
+
+    if form.validate_on_submit():
+
+        if User.query.filter_by(email=form.login_email.data).first():
+            flash('Login email already in use.', 'danger')
+
+        else:
+            off_days = ','.join(form.recurring_off_days.data) if form.recurring_off_days.data else ''
+
+            hashed_pw = bcrypt.generate_password_hash(
+                form.login_password.data
+            ).decode('utf-8')
+
+            user = User(
+                name=form.name.data,
+                email=form.login_email.data,
+                password=hashed_pw,
+                role='officer',
+                is_active=True,
+                email_verified=True
+            )
+
+            db.session.add(user)
+            db.session.flush()
+
+            officer = Officer(
+                name=form.name.data,
+                designation=form.designation.data,
+                bio=form.bio.data,
+                handles=form.handles.data,
+                email=form.login_email.data,
+                room=form.room.data,
+                photo_url=form.photo_url.data or None,
+                work_start=form.work_start.data,
+                work_end=form.work_end.data,
+                daily_limit=form.daily_limit.data,
+                recurring_off_days=off_days
+            )
+
+            db.session.add(officer)
+            db.session.commit()
+
+            log_action(
+                'officer_added',
+                f"{officer.name} added"
+            )
+
+            flash('Officer added successfully!', 'success')
+            return redirect(url_for('admin.manage_officers'))
+
+    officers = Officer.query.all()
+
+    return render_template(
+        'admin/officers.html',
+        officers=officers,
+        form=form
+    )
 
 # ─────────────────────────────────────────────────────────────
 # UPDATE STATUS
