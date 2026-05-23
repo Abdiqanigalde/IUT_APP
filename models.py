@@ -134,6 +134,12 @@ class Appointment(db.Model):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc)
     )
+    # ── Cal.com-style fields ──────────────────────────────────────────────────
+    duration        = db.Column(db.Integer,  nullable=True, default=15)   # minutes
+    notes           = db.Column(db.Text,     nullable=True)
+    meeting_type    = db.Column(db.String(50), nullable=True, default='in_person')  # in_person, online
+    timezone        = db.Column(db.String(50), nullable=True, default='Asia/Dhaka')
+    location        = db.Column(db.String(255), nullable=True)
     # NOTE: waitlist relationship removed — WaitlistEntry is now slot-based,
     # not appointment-based. Use WaitlistEntry.query.filter_by(officer_id=...,
     # slot_date=..., slot_time=...) directly.
@@ -226,3 +232,22 @@ class AuditLog(db.Model):
     detail      = db.Column(db.String(500), nullable=False)
     created_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     admin       = db.relationship('User', backref='audit_logs')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Cal.com-style additions — added for modern booking UI
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AppointmentHistory(db.Model):
+    """Tracks every status change, reschedule, or action on an appointment."""
+    __tablename__ = 'appointment_history'
+    id              = db.Column(db.Integer, primary_key=True)
+    appointment_id  = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=False, index=True)
+    action          = db.Column(db.String(50),  nullable=False)   # e.g. 'status_change', 'reschedule', 'note_added'
+    old_value       = db.Column(db.Text,        nullable=True)
+    new_value       = db.Column(db.Text,        nullable=True)
+    changed_by      = db.Column(db.Integer,     db.ForeignKey('user.id'), nullable=True)
+    note            = db.Column(db.Text,        nullable=True)
+    timestamp       = db.Column(db.DateTime,    default=lambda: datetime.now(timezone.utc))
+    appointment     = db.relationship('Appointment', backref='history_events')
+    changer         = db.relationship('User',        foreign_keys=[changed_by])
