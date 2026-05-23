@@ -313,6 +313,30 @@ def delete_officer(officer_id):
     db.session.commit()
     flash('Officer and login account removed.', 'info')
     return redirect(url_for('admin.manage_officers'))
+# ── Edit Officer ──────────────────────────────────────────────────────────────
+@admin_bp.route('/admin/officers/<int:officer_id>/edit', methods=['POST'])
+@login_required
+@admin_required
+def edit_officer(officer_id):
+    officer = db.session.get(Officer, officer_id)
+    if not officer:
+        flash('Officer not found.', 'danger')
+        return redirect(url_for('admin.manage_officers'))
+
+    officer.name         = request.form.get('edit_name', officer.name).strip()
+    officer.designation  = request.form.get('edit_designation', officer.designation).strip()
+    officer.handles      = request.form.get('edit_handles', officer.handles or '').strip()
+    officer.room         = request.form.get('edit_room', officer.room or '').strip()
+    officer.photo_url    = request.form.get('edit_photo_url', officer.photo_url or '').strip()
+    officer.work_start   = request.form.get('edit_work_start', officer.work_start or '08:00').strip()
+    officer.work_end     = request.form.get('edit_work_end', officer.work_end or '17:00').strip()
+    officer.daily_limit  = int(request.form.get('edit_daily_limit', officer.daily_limit or 0))
+    officer.is_active    = request.form.get('edit_is_active', '1') == '1'
+
+    db.session.commit()
+    log_action('officer_updated', f"Updated officer profile: {officer.name}")
+    flash(f'{officer.name} updated successfully.', 'success')
+    return redirect(url_for('admin.manage_officers'))
 
 # ── Working hours ─────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/officer/<int:officer_id>/hours', methods=['GET', 'POST'])
