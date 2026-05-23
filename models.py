@@ -99,7 +99,7 @@ class OfficerWorkingHours(db.Model):
 
 class OfficerUnavailability(db.Model):
     id          = db.Column(db.Integer, primary_key=True)
-    officer_id  = db.Column(db.Integer, db.ForeignKey('officer.id'), nullable=False)
+    officer_id  = db.Column(db.Integer, db.ForeignKey('officer.id'), nullable=True)
     start_date  = db.Column(db.Date, nullable=False)
     end_date    = db.Column(db.Date, nullable=False)
     reason      = db.Column(db.String(255), nullable=False)
