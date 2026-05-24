@@ -98,6 +98,101 @@
 
   .fee-table th { background: #0d4f3c; color: white; }
   .fee-table td, .fee-table th { padding: 10px 14px; font-size: .9rem; }
+
+  /* ── Document Upload Section ── */
+  .upload-section {
+    background: #f8fffe;
+    border: 2px dashed #b2dfdb;
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 20px;
+  }
+  .upload-section h6 {
+    color: #0d4f3c;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 576px) { .upload-grid { grid-template-columns: 1fr; } }
+
+  .upload-field label {
+    display: block;
+    font-size: .82rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 5px;
+  }
+  .upload-field label .req { color: #ef4444; margin-left: 2px; }
+  .upload-field input[type=file] {
+    width: 100%;
+    font-size: .82rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: white;
+    cursor: pointer;
+    transition: border-color .2s;
+  }
+  .upload-field input[type=file]:hover { border-color: #0d4f3c; }
+  .upload-hint {
+    font-size: .75rem;
+    color: #6b7280;
+    margin-top: 3px;
+  }
+
+  .submit-upload-btn {
+    background: linear-gradient(135deg, #0d4f3c, #1a7a5e);
+    color: white; border: none; border-radius: 10px;
+    padding: 12px 28px; font-size: .95rem; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: opacity .2s, transform .2s; cursor: pointer;
+    margin-top: 18px;
+  }
+  .submit-upload-btn:hover { opacity: .9; transform: translateY(-1px); }
+
+  /* ── Application Status Banner ── */
+  .status-banner {
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .status-banner.pending  { background: #fff8e1; border-left: 5px solid #f59e0b; }
+  .status-banner.approved { background: #e8f5e9; border-left: 5px solid #22c55e; }
+  .status-banner.rejected { background: #fef2f2; border-left: 5px solid #ef4444; }
+  .status-icon { font-size: 1.8rem; flex-shrink: 0; }
+  .status-banner .status-title { font-weight: 700; font-size: 1rem; margin-bottom: 2px; }
+  .status-banner .status-sub   { font-size: .85rem; color: #6b7280; margin: 0; }
+  .status-banner .status-note  { font-size: .85rem; margin-top: 6px; padding: 8px 12px;
+                                  background: rgba(0,0,0,.05); border-radius: 6px; }
+
+  .doc-submitted-list {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  @media (max-width: 576px) { .doc-submitted-list { grid-template-columns: 1fr; } }
+
+  .doc-item {
+    display: flex; align-items: center; gap: 8px;
+    background: white; border-radius: 8px;
+    padding: 8px 12px; font-size: .82rem;
+    border: 1px solid #e5e7eb;
+  }
+  .doc-item .doc-icon { font-size: 1rem; }
+  .doc-item a { color: #0d4f3c; text-decoration: none; font-weight: 500; }
+  .doc-item a:hover { text-decoration: underline; }
+  .doc-item .missing { color: #9ca3af; font-style: italic; }
 </style>
 
 <!-- Hero -->
@@ -105,6 +200,44 @@
   <h2><i class="fas fa-passport me-2"></i>Bangladesh Visa Application Guide</h2>
   <p>Step-by-step guide to apply for a Bangladesh visa online via the official government portal.</p>
 </div>
+
+<!-- Application Status Banner (shown only if submitted) -->
+{% if application %}
+  {% if application.status == 'Pending' %}
+  <div class="status-banner pending">
+    <div class="status-icon">⏳</div>
+    <div>
+      <div class="status-title">Application Under Review</div>
+      <p class="status-sub">Your documents have been submitted and are being reviewed by the visa officer.</p>
+      {% if application.officer_note %}
+        <div class="status-note"><strong>Note:</strong> {{ application.officer_note }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% elif application.status == 'Approved' %}
+  <div class="status-banner approved">
+    <div class="status-icon">✅</div>
+    <div>
+      <div class="status-title" style="color:#15803d;">Application Approved!</div>
+      <p class="status-sub">Congratulations! Your visa documents have been approved by the visa officer.</p>
+      {% if application.officer_note %}
+        <div class="status-note"><strong>Officer Note:</strong> {{ application.officer_note }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% elif application.status == 'Rejected' %}
+  <div class="status-banner rejected">
+    <div class="status-icon">❌</div>
+    <div>
+      <div class="status-title" style="color:#dc2626;">Application Rejected</div>
+      <p class="status-sub">Unfortunately your application was not approved. Please review the note below and resubmit.</p>
+      {% if application.officer_note %}
+        <div class="status-note"><strong>Reason:</strong> {{ application.officer_note }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+{% endif %}
 
 <!-- Progress tracker -->
 <div class="card border-0 shadow-sm mb-4 p-3">
@@ -180,6 +313,124 @@
           <strong>Important:</strong> If you leave the form incomplete, use the
           <a href="https://visa.gov.bd/Incomplete.aspx" target="_blank">"Incomplete Application"</a> link to retrieve it later.
         </div>
+
+        <!-- ── Document Upload ── -->
+        {% if not application or application.status == 'Rejected' %}
+        <div class="upload-section mt-4">
+          <h6><i class="fas fa-cloud-upload-alt"></i> Upload Your Visa Documents</h6>
+          <p class="text-muted small mb-3">
+            Upload the required documents below. The visa officer will review them and update your status.
+            Accepted formats: <strong>PDF, JPG, PNG</strong> (max 5MB each).
+          </p>
+
+          <form method="POST" action="{{ url_for('visa.visa_submit') }}" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- Student info row -->
+            <div class="row g-3 mb-3">
+              <div class="col-sm-4">
+                <label class="form-label" style="font-size:.82rem;font-weight:600;">Full Name</label>
+                <input type="text" name="student_name" class="form-control form-control-sm"
+                       value="{{ current_user.name }}" required>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label" style="font-size:.82rem;font-weight:600;">Student ID <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="student_id_num" class="form-control form-control-sm"
+                       value="{{ current_user.student_id_num or '' }}" required placeholder="e.g. 210011001">
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label" style="font-size:.82rem;font-weight:600;">Department <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="department" class="form-control form-control-sm"
+                       value="{{ current_user.department or '' }}" required placeholder="e.g. CSE">
+              </div>
+            </div>
+
+            <!-- Document upload grid -->
+            <div class="upload-grid">
+              <div class="upload-field">
+                <label><i class="fas fa-passport me-1"></i>Passport Copy <span class="req">*</span></label>
+                <input type="file" name="passport_copy" accept=".pdf,.jpg,.jpeg,.png">
+                <p class="upload-hint">Bio-data page of your passport</p>
+              </div>
+              <div class="upload-field">
+                <label><i class="fas fa-image me-1"></i>Passport Photo <span class="req">*</span></label>
+                <input type="file" name="photo" accept=".jpg,.jpeg,.png">
+                <p class="upload-hint">Recent passport-size photo (JPEG/PNG)</p>
+              </div>
+              <div class="upload-field">
+                <label><i class="fas fa-file-alt me-1"></i>Offer / Admission Letter <span class="req">*</span></label>
+                <input type="file" name="offer_letter" accept=".pdf,.jpg,.jpeg,.png">
+                <p class="upload-hint">Official letter from IUT</p>
+              </div>
+              <div class="upload-field">
+                <label><i class="fas fa-id-card me-1"></i>Student ID Card</label>
+                <input type="file" name="student_id_doc" accept=".pdf,.jpg,.jpeg,.png">
+                <p class="upload-hint">Front side of your student ID</p>
+              </div>
+              <div class="upload-field">
+                <label><i class="fas fa-stamp me-1"></i>Expired Visa (if any)</label>
+                <input type="file" name="expired_visa" accept=".pdf,.jpg,.jpeg,.png">
+                <p class="upload-hint">Previous Bangladesh visa page</p>
+              </div>
+              <div class="upload-field">
+                <label><i class="fas fa-graduation-cap me-1"></i>Grade Sheet</label>
+                <input type="file" name="grade_sheet" accept=".pdf,.jpg,.jpeg,.png">
+                <p class="upload-hint">Latest academic transcript</p>
+              </div>
+              <div class="upload-field" style="grid-column: 1 / -1;">
+                <label><i class="fas fa-plane-arrival me-1"></i>On Arrival Document</label>
+                <input type="file" name="on_arrival" accept=".pdf,.jpg,.jpeg,.png">
+                <p class="upload-hint">On-arrival visa supporting document (if applicable)</p>
+              </div>
+            </div>
+
+            <button type="submit" class="submit-upload-btn">
+              <i class="fas fa-paper-plane"></i> Submit Documents to Visa Officer
+            </button>
+          </form>
+        </div>
+
+        {% else %}
+        <!-- Already submitted — show submitted docs -->
+        <div class="upload-section mt-4" style="border-color: {% if application.status == 'Approved' %}#86efac{% else %}#fca5a5{% endif %}; background: {% if application.status == 'Approved' %}#f0fdf4{% else %}#fff1f2{% endif %};">
+          <h6>
+            <i class="fas fa-check-circle text-success me-1"></i>
+            Documents Submitted
+            <span class="badge ms-2
+              {% if application.status == 'Approved' %}bg-success
+              {% elif application.status == 'Rejected' %}bg-danger
+              {% else %}bg-warning text-dark{% endif %}">
+              {{ application.status }}
+            </span>
+          </h6>
+          <p class="text-muted small mb-2">Submitted on {{ application.created_at.strftime('%d %b %Y, %I:%M %p') }} UTC</p>
+
+          <div class="doc-submitted-list">
+            {% set docs = [
+              ('passport_copy',  'fas fa-passport',        'Passport Copy'),
+              ('photo',          'fas fa-image',           'Photo'),
+              ('offer_letter',   'fas fa-file-alt',        'Offer Letter'),
+              ('student_id_doc', 'fas fa-id-card',         'Student ID'),
+              ('expired_visa',   'fas fa-stamp',           'Expired Visa'),
+              ('grade_sheet',    'fas fa-graduation-cap',  'Grade Sheet'),
+              ('on_arrival',     'fas fa-plane-arrival',   'On Arrival'),
+            ] %}
+            {% for field, icon, label in docs %}
+              {% set url = application[field] if application[field] is defined else none %}
+              {% set url = application|attr(field) %}
+              <div class="doc-item">
+                <span class="doc-icon"><i class="{{ icon }}"></i></span>
+                {% if url %}
+                  <a href="{{ url }}" target="_blank">{{ label }} <i class="fas fa-external-link-alt" style="font-size:.7rem;"></i></a>
+                {% else %}
+                  <span class="missing">{{ label }} — not uploaded</span>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
       </div>
     </div>
 
@@ -237,7 +488,31 @@
       </div>
     </div>
 
-   <!-- Visa Fee Table -->
+    <!-- My Application Status Card (sidebar) -->
+    {% if application %}
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header fw-semibold" style="background:#f8f9fa;">
+        <i class="fas fa-clipboard-check me-2 text-success"></i>My Document Status
+      </div>
+      <div class="card-body text-center py-4">
+        {% if application.status == 'Pending' %}
+          <div style="font-size:2.5rem;">⏳</div>
+          <div class="fw-bold mt-2 text-warning">Pending Review</div>
+        {% elif application.status == 'Approved' %}
+          <div style="font-size:2.5rem;">✅</div>
+          <div class="fw-bold mt-2 text-success">Approved</div>
+        {% elif application.status == 'Rejected' %}
+          <div style="font-size:2.5rem;">❌</div>
+          <div class="fw-bold mt-2 text-danger">Rejected</div>
+        {% endif %}
+        <p class="text-muted small mt-1 mb-0">
+          Submitted {{ application.created_at.strftime('%d %b %Y') }}
+        </p>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Visa Fee Table -->
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-header fw-semibold" style="background:#f8f9fa;">
         <i class="fas fa-money-bill-wave me-2 text-success"></i>Sample Visa Fees
