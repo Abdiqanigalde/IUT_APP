@@ -11,8 +11,6 @@ from flask_limiter.util import get_remote_address
 from flask_socketio import SocketIO, emit, join_room
 from models import db, User
 from datetime import datetime, timedelta, timezone
-from routes.visa        import visa_bp
-app.register_blueprint(visa_bp)
 
 app = Flask(__name__)
 
@@ -259,7 +257,6 @@ with app.app_context():
 
         if is_pg3:
             with db.engine.connect() as conn:
-                # Check if the NOT NULL constraint still exists
                 result = conn.execute(text("""
                     SELECT is_nullable
                     FROM information_schema.columns
@@ -276,12 +273,23 @@ with app.app_context():
                 else:
                     print('[IUT] officer_id nullable migration: already applied — skipping.')
         else:
-            # SQLite doesn't enforce NOT NULL changes easily, but db.create_all()
-            # won't re-add it since the model now has nullable=True
             print('[IUT] officer_id nullable migration: SQLite — skipping (handled by model).')
 
     except Exception as _nullable_err:
         print(f'[IUT] officer_id nullable migration error (non-fatal): {_nullable_err}')
+
+    # ── visa_application table migration ──────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect4
+        inspector4 = sa_inspect4(db.engine)
+        all_tables4 = inspector4.get_table_names()
+        if 'visa_application' not in all_tables4:
+            db.create_all()
+            print('[IUT] visa_application table created ✅')
+        else:
+            print('[IUT] visa_application table already exists — skipping.')
+    except Exception as _visa_err:
+        print(f'[IUT] visa_application migration error (non-fatal): {_visa_err}')
 
 
 # ── Session timeout ───────────────────────────────────────────────────────────
@@ -376,12 +384,14 @@ from routes.student     import student_bp
 from routes.admin       import admin_bp
 from routes.officer     import officer_bp
 from routes.super_admin import super_admin_bp
+from routes.visa        import visa_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(student_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(officer_bp)
 app.register_blueprint(super_admin_bp)
+app.register_blueprint(visa_bp)
 
 limiter.limit("10 per minute")(auth_bp)
 
@@ -391,9 +401,10 @@ limiter.limit("10 per minute")(auth_bp)
 def index():
     if current_user.is_authenticated:
         role = current_user.role
-        if role == 'super_admin': return redirect(url_for('super_admin.dashboard'))
-        if role == 'admin':       return redirect(url_for('admin.dashboard'))
-        if role == 'officer':     return redirect(url_for('officer.dashboard'))
+        if role == 'super_admin':  return redirect(url_for('super_admin.dashboard'))
+        if role == 'admin':        return redirect(url_for('admin.dashboard'))
+        if role == 'officer':      return redirect(url_for('officer.dashboard'))
+        if role == 'visa_officer': return redirect(url_for('visa.visa_officer_dashboard'))
         return redirect(url_for('student.dashboard'))
     return render_template('home.html')
 
