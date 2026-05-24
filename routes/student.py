@@ -1215,6 +1215,16 @@ def get_slots_calcom():
             'waiters':   waiters,
         })
 
-        cur += duration
+     cur += duration
 
     return jsonify({'unavailable': False, 'slots': slots})
+
+
+# ── Visa Guide ────────────────────────────────────────────────────────────────
+
+@student_bp.route('/student/visa-guide')
+@login_required
+def visa_guide():
+    if current_user.role != 'student':
+        return redirect(url_for('index'))
+    return render_template('student/visa_guide.html')
