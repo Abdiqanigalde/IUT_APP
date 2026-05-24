@@ -154,7 +154,11 @@ def reset_password(token):
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     prt = PasswordResetToken.query.filter_by(token=token, used=False).first()
-    if not prt or datetime.now(timezone.utc) > prt.expires_at:
+    if not prt:
+        flash('Invalid or expired reset link.', 'danger')
+        return redirect(url_for('auth.forgot_password'))
+    expires = prt.expires_at.replace(tzinfo=timezone.utc) if prt.expires_at.tzinfo is None else prt.expires_at
+    if datetime.now(timezone.utc) > expires:
         flash('Invalid or expired reset link.', 'danger')
         return redirect(url_for('auth.forgot_password'))
     user = db.session.get(User, prt.user_id)
