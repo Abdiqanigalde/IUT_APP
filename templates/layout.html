@@ -60,6 +60,8 @@
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.dashboard') }}"><i class="fas fa-home me-1"></i>Dashboard</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.schedule') }}"><i class="fas fa-calendar-alt me-1"></i>Schedule</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.scan_page') }}"><i class="fas fa-qrcode me-1"></i>Scan QR</a></li>
+                    {% elif current_user.role == 'visa_officer' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('visa.visa_officer_dashboard') }}"><i class="fas fa-passport me-1"></i>Visa Dashboard</a></li>
                     {% else %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('student.dashboard') }}"><i class="fas fa-home me-1"></i>My Appointments</a></li>
                         <li class="nav-item"><a class="nav-link fw-semibold" href="{{ url_for('student.book_calcom') }}" style="color:var(--primary-color)!important"><i class="fas fa-calendar-plus me-1"></i>Book</a></li>
