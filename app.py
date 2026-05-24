@@ -11,6 +11,8 @@ from flask_limiter.util import get_remote_address
 from flask_socketio import SocketIO, emit, join_room
 from models import db, User
 from datetime import datetime, timedelta, timezone
+from routes.visa        import visa_bp
+app.register_blueprint(visa_bp)
 
 app = Flask(__name__)
 
