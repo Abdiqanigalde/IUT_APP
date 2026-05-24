@@ -4,6 +4,7 @@ from models import db, User, PasswordResetToken, PRIVILEGED_ROLES
 from forms import RegistrationForm, LoginForm, ForgotPasswordForm, ResetPasswordForm
 from flask_bcrypt import Bcrypt
 import secrets
+import os
 from datetime import datetime, timedelta, timezone
 
 auth_bp = Blueprint('auth', __name__)
@@ -131,7 +132,7 @@ def forgot_password():
             reset_url = url_for('auth.reset_password', token=token_str, _external=True)
             from utils import send_email, password_reset_email
             from flask import current_app
-            mail_configured = bool(current_app.config.get('MAIL_USERNAME'))
+            mail_configured = bool(os.environ.get('BREVO_API_KEY'))
             if mail_configured:
                 send_email('Password Reset — IUT Appointments', [user.email],
                            password_reset_email(user, reset_url))
