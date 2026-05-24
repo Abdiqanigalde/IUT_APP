@@ -5,10 +5,8 @@ import secrets
 
 db = SQLAlchemy()
 
-# Valid roles — checked on backend to prevent privilege escalation
-VALID_ROLES = ('student', 'officer', 'admin', 'super_admin')
-# Roles that can ONLY be assigned by super_admin, never by public registration
-PRIVILEGED_ROLES = ('officer', 'admin', 'super_admin')
+VALID_ROLES = ('student', 'officer', 'admin', 'super_admin', 'visa_officer')
+PRIVILEGED_ROLES = ('officer', 'admin', 'super_admin', 'visa_officer')
 
 
 class User(db.Model, UserMixin):
@@ -223,3 +221,27 @@ class AppointmentHistory(db.Model):
     timestamp       = db.Column(db.DateTime,    default=lambda: datetime.now(timezone.utc))
     appointment     = db.relationship('Appointment', backref='history_events')
     changer         = db.relationship('User',        foreign_keys=[changed_by])
+
+
+class VisaApplication(db.Model):
+    __tablename__ = 'visa_application'
+    id              = db.Column(db.Integer, primary_key=True)
+    user_id         = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    student_name    = db.Column(db.String(100), nullable=False)
+    student_id_num  = db.Column(db.String(50),  nullable=False)
+    department      = db.Column(db.String(100),  nullable=False)
+    status          = db.Column(db.String(20),   default='Pending')
+    officer_note    = db.Column(db.Text,         nullable=True)
+    created_at      = db.Column(db.DateTime,     default=lambda: datetime.now(timezone.utc))
+    updated_at      = db.Column(db.DateTime,     default=lambda: datetime.now(timezone.utc))
+
+    # Document URLs (stored on Cloudinary)
+    passport_copy   = db.Column(db.String(500), nullable=True)
+    photo           = db.Column(db.String(500), nullable=True)
+    offer_letter    = db.Column(db.String(500), nullable=True)
+    student_id_doc  = db.Column(db.String(500), nullable=True)
+    expired_visa    = db.Column(db.String(500), nullable=True)
+    grade_sheet     = db.Column(db.String(500), nullable=True)
+    on_arrival      = db.Column(db.String(500), nullable=True)
+
+    user = db.relationship('User', backref='visa_applications')
