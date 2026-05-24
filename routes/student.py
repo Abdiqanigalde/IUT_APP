@@ -1215,7 +1215,7 @@ def get_slots_calcom():
             'waiters':   waiters,
         })
 
-     cur += duration
+        cur += duration
 
     return jsonify({'unavailable': False, 'slots': slots})
 
