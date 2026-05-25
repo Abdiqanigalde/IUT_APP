@@ -56,7 +56,7 @@ def visa_submit():
     uid = current_user.id
 
     existing = VisaApplication.query.filter_by(user_id=uid).first()
-    if existing and existing.status == 'Pending':
+    if False:
         flash('You already have a pending visa application.', 'warning')
         return redirect(url_for('visa.visa_guide'))
 
