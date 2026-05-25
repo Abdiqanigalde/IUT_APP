@@ -29,6 +29,7 @@ def upload_to_cloudinary(file, folder, public_id):
             public_id=public_id,
             resource_type='auto',
             overwrite=True,
+            access_mode='public',
         )
         return result.get('secure_url')
     except Exception as e:
