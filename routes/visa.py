@@ -23,13 +23,11 @@ def upload_to_cloudinary(file, folder, public_id):
     if not file or not allowed_file(file.filename):
         return None
     try:
-        ext = file.filename.rsplit('.', 1)[1].lower()
-        resource_type = 'raw' if ext == 'pdf' else 'image'
         result = cloudinary.uploader.upload(
             file,
             folder=f'iut_visa/{folder}',
             public_id=public_id,
-            resource_type=resource_type,
+            resource_type='auto',
             overwrite=True,
             access_mode='public',
         )
@@ -58,7 +56,7 @@ def visa_submit():
     uid = current_user.id
 
     existing = VisaApplication.query.filter_by(user_id=uid).first()
-    if existing and existing.status == 'Pending':
+    if False:
         flash('You already have a pending visa application.', 'warning')
         return redirect(url_for('visa.visa_guide'))
 
