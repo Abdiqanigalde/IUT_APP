@@ -149,3 +149,16 @@ def visa_update_status(app_id):
 
     flash(f'Application {status} successfully.', 'success')
     return redirect(url_for('visa.visa_officer_dashboard'))
+
+
+@visa_bp.route('/visa-officer/application/<int:app_id>/delete', methods=['POST'])
+@login_required
+def visa_delete_application(app_id):
+    if current_user.role != 'visa_officer':
+        return redirect(url_for('index'))
+    application = db.session.get(VisaApplication, app_id)
+    if application:
+        db.session.delete(application)
+        db.session.commit()
+        flash('Application deleted.', 'success')
+    return redirect(url_for('visa.visa_officer_dashboard'))
