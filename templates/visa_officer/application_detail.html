@@ -199,9 +199,15 @@
             <div class="doc-icon">{{ icon }}</div>
             <div class="doc-name">{{ label }}</div>
             {% if url %}
-              <a href="{{ url }}" target="_blank" class="view-btn">
-                <i class="fas fa-eye me-1"></i>View
-              </a>
+              {% if '.pdf' in url %}
+                <a href="https://docs.google.com/viewer?url={{ url }}&embedded=true" target="_blank" class="view-btn">
+                  <i class="fas fa-eye me-1"></i>View
+                </a>
+              {% else %}
+                <a href="{{ url }}" target="_blank" class="view-btn">
+                  <i class="fas fa-eye me-1"></i>View
+                </a>
+              {% endif %}
             {% else %}
               <span class="missing-doc">Not uploaded</span>
             {% endif %}
