@@ -23,14 +23,26 @@ def upload_to_cloudinary(file, folder, public_id):
     if not file or not allowed_file(file.filename):
         return None
     try:
-        result = cloudinary.uploader.upload(
-            file,
-            folder=f'iut_visa/{folder}',
-            public_id=public_id,
-            resource_type='auto',
-            overwrite=True,
-            access_mode='public',
-        )
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        if ext == 'pdf':
+            result = cloudinary.uploader.upload(
+                file,
+                folder=f'iut_visa/{folder}',
+                public_id=public_id,
+                resource_type='image',
+                format='jpg',
+                overwrite=True,
+                access_mode='public',
+            )
+        else:
+            result = cloudinary.uploader.upload(
+                file,
+                folder=f'iut_visa/{folder}',
+                public_id=public_id,
+                resource_type='image',
+                overwrite=True,
+                access_mode='public',
+            )
         return result.get('secure_url')
     except Exception as e:
         print(f'[IUT] Cloudinary upload error: {e}')
