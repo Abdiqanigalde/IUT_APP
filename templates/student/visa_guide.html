@@ -99,7 +99,6 @@
   .fee-table th { background: #0d4f3c; color: white; }
   .fee-table td, .fee-table th { padding: 10px 14px; font-size: .9rem; }
 
-  /* ── Document Upload Section ── */
   .upload-section {
     background: #f8fffe;
     border: 2px dashed #b2dfdb;
@@ -157,7 +156,6 @@
   }
   .submit-upload-btn:hover { opacity: .9; transform: translateY(-1px); }
 
-  /* ── Application Status Banner ── */
   .status-banner {
     border-radius: 12px;
     padding: 18px 22px;
@@ -201,7 +199,6 @@
   <p>Step-by-step guide to apply for a Bangladesh visa online via the official government portal.</p>
 </div>
 
-<!-- Application Status Banner (shown only if submitted) -->
 {% if application %}
   {% if application.status == 'Pending' %}
   <div class="status-banner pending">
@@ -314,19 +311,19 @@
           <a href="https://visa.gov.bd/Incomplete.aspx" target="_blank">"Incomplete Application"</a> link to retrieve it later.
         </div>
 
-        <!-- ── Document Upload ── -->
+        <!-- Document Upload -->
         {% if not application or application.status == 'Rejected' %}
         <div class="upload-section mt-4">
           <h6><i class="fas fa-cloud-upload-alt"></i> Upload Your Visa Documents</h6>
-          <p class="text-muted small mb-3">
-            Upload the required documents below. The visa officer will review them and update your status.
-            Accepted formats: <strong>PDF, JPG, PNG</strong> (max 5MB each).
-          </p>
+          <div class="info-box mb-3" style="background:#e8f4fd; border-color:#2563eb; color:#1e40af;">
+            <i class="fas fa-info-circle me-2" style="color:#2563eb;"></i>
+            <strong>Image files only</strong> — Please upload documents as <strong>JPG or PNG</strong> images.
+            If you have a PDF, convert it to an image first using any free online tool.
+          </div>
 
           <form method="POST" action="{{ url_for('visa.visa_submit') }}" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-            <!-- Student info row -->
             <div class="row g-3 mb-3">
               <div class="col-sm-4">
                 <label class="form-label" style="font-size:.82rem;font-weight:600;">Full Name</label>
@@ -345,42 +342,41 @@
               </div>
             </div>
 
-            <!-- Document upload grid -->
             <div class="upload-grid">
               <div class="upload-field">
                 <label><i class="fas fa-passport me-1"></i>Passport Copy <span class="req">*</span></label>
-                <input type="file" name="passport_copy" accept=".pdf,.jpg,.jpeg,.png">
-                <p class="upload-hint">Bio-data page of your passport</p>
+                <input type="file" name="passport_copy" accept=".jpg,.jpeg,.png">
+                <p class="upload-hint">Bio-data page photo (JPG/PNG)</p>
               </div>
               <div class="upload-field">
                 <label><i class="fas fa-image me-1"></i>Passport Photo <span class="req">*</span></label>
                 <input type="file" name="photo" accept=".jpg,.jpeg,.png">
-                <p class="upload-hint">Recent passport-size photo (JPEG/PNG)</p>
+                <p class="upload-hint">Recent passport-size photo (JPG/PNG)</p>
               </div>
               <div class="upload-field">
                 <label><i class="fas fa-file-alt me-1"></i>Offer / Admission Letter <span class="req">*</span></label>
-                <input type="file" name="offer_letter" accept=".pdf,.jpg,.jpeg,.png">
-                <p class="upload-hint">Official letter from IUT</p>
+                <input type="file" name="offer_letter" accept=".jpg,.jpeg,.png">
+                <p class="upload-hint">Photo of official letter from IUT (JPG/PNG)</p>
               </div>
               <div class="upload-field">
                 <label><i class="fas fa-id-card me-1"></i>Student ID Card</label>
-                <input type="file" name="student_id_doc" accept=".pdf,.jpg,.jpeg,.png">
-                <p class="upload-hint">Front side of your student ID</p>
+                <input type="file" name="student_id_doc" accept=".jpg,.jpeg,.png">
+                <p class="upload-hint">Photo of front side (JPG/PNG)</p>
               </div>
               <div class="upload-field">
                 <label><i class="fas fa-stamp me-1"></i>Expired Visa (if any)</label>
-                <input type="file" name="expired_visa" accept=".pdf,.jpg,.jpeg,.png">
-                <p class="upload-hint">Previous Bangladesh visa page</p>
+                <input type="file" name="expired_visa" accept=".jpg,.jpeg,.png">
+                <p class="upload-hint">Photo of previous Bangladesh visa (JPG/PNG)</p>
               </div>
               <div class="upload-field">
                 <label><i class="fas fa-graduation-cap me-1"></i>Grade Sheet</label>
-                <input type="file" name="grade_sheet" accept=".pdf,.jpg,.jpeg,.png">
-                <p class="upload-hint">Latest academic transcript</p>
+                <input type="file" name="grade_sheet" accept=".jpg,.jpeg,.png">
+                <p class="upload-hint">Photo of latest transcript (JPG/PNG)</p>
               </div>
               <div class="upload-field" style="grid-column: 1 / -1;">
                 <label><i class="fas fa-plane-arrival me-1"></i>On Arrival Document</label>
-                <input type="file" name="on_arrival" accept=".pdf,.jpg,.jpeg,.png">
-                <p class="upload-hint">On-arrival visa supporting document (if applicable)</p>
+                <input type="file" name="on_arrival" accept=".jpg,.jpeg,.png">
+                <p class="upload-hint">On-arrival supporting document photo (JPG/PNG)</p>
               </div>
             </div>
 
@@ -391,7 +387,6 @@
         </div>
 
         {% else %}
-        <!-- Already submitted — show submitted docs -->
         <div class="upload-section mt-4" style="border-color: {% if application.status == 'Approved' %}#86efac{% else %}#fca5a5{% endif %}; background: {% if application.status == 'Approved' %}#f0fdf4{% else %}#fff1f2{% endif %};">
           <h6>
             <i class="fas fa-check-circle text-success me-1"></i>
@@ -416,7 +411,6 @@
               ('on_arrival',     'fas fa-plane-arrival',   'On Arrival'),
             ] %}
             {% for field, icon, label in docs %}
-              {% set url = application[field] if application[field] is defined else none %}
               {% set url = application|attr(field) %}
               <div class="doc-item">
                 <span class="doc-icon"><i class="{{ icon }}"></i></span>
@@ -447,7 +441,7 @@
         </div>
         <p class="text-muted small mt-3 mb-0">
           <i class="fas fa-map-marker-alt me-1 text-danger"></i>
-          Find your nearest mission at <a href="https://visa.gov.bd" target="_blank">visa.gov.bd</a> — supported cities include Dhaka, London, New York, Dubai, Kuala Lumpur, Tokyo, and many more.
+          Find your nearest mission at <a href="https://visa.gov.bd" target="_blank">visa.gov.bd</a>
         </p>
       </div>
     </div>
@@ -488,7 +482,6 @@
       </div>
     </div>
 
-    <!-- My Application Status Card (sidebar) -->
     {% if application %}
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-header fw-semibold" style="background:#f8f9fa;">
@@ -571,7 +564,6 @@
     const item = document.getElementById(itemId);
     if (cb.checked) item.classList.add('checked');
     else item.classList.remove('checked');
-
     const checked = document.querySelectorAll('input[type=checkbox]:checked').length;
     const pct = Math.round((checked / total) * 100);
     document.getElementById('progress-fill').style.width = pct + '%';
