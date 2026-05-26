@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, Response, jsonify
 from flask_login import login_required, current_user
-from models import db, Appointment, User, Officer, Notification, OfficerUnavailability, AuditLog, OfficerWorkingHours
+from models import db, Appointment, User, Officer, Notification, OfficerUnavailability, AuditLog, OfficerWorkingHours, GlobalHoliday
 from forms import OfficerForm, UnavailabilityForm, WorkingHoursForm, RejectNoteForm, OfficerProfileForm
 from datetime import datetime, timedelta, timezone
 import csv, io
@@ -333,6 +333,7 @@ def delete_officer(officer_id):
 
     flash(f'Officer removed successfully. {len(appointments)} appointment(s) cancelled.', 'success')
     return redirect(url_for('admin.manage_officers'))
+
 # ── Edit Officer ──────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/officers/<int:officer_id>/edit', methods=['POST'])
 @login_required
@@ -509,3 +510,71 @@ def profile():
         form.name.data = current_user.name
         form.email.data = current_user.email
     return render_template('profile.html', form=form)
+
+
+# ── Global Holidays ───────────────────────────────────────────────────────────
+
+@admin_bp.route('/admin/holidays', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_holidays():
+    if request.method == 'POST':
+        title      = request.form.get('title', '').strip()
+        start_str  = request.form.get('start_date', '').strip()
+        end_str    = request.form.get('end_date', '').strip()
+
+        if not title or not start_str or not end_str:
+            flash('All fields are required.', 'danger')
+            return redirect(url_for('admin.manage_holidays'))
+
+        try:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+            end_date   = datetime.strptime(end_str,   '%Y-%m-%d').date()
+        except ValueError:
+            flash('Invalid date format.', 'danger')
+            return redirect(url_for('admin.manage_holidays'))
+
+        if end_date < start_date:
+            flash('End date cannot be before start date.', 'danger')
+            return redirect(url_for('admin.manage_holidays'))
+
+        holiday = GlobalHoliday(title=title, start_date=start_date, end_date=end_date)
+        db.session.add(holiday)
+
+        # Cancel all Pending/Approved appointments that fall in this range
+        affected = Appointment.query.filter(
+            Appointment.date >= start_date,
+            Appointment.date <= end_date,
+            Appointment.status.in_(['Pending', 'Approved'])
+        ).all()
+        for apt in affected:
+            apt.status = 'Rejected'
+            apt.rejection_note = f'University Holiday: {title}'
+            db.session.add(Notification(
+                user_id=apt.user_id,
+                message=f'Your appointment on {apt.date.strftime("%d %b %Y")} was cancelled due to a university holiday: {title}.'
+            ))
+
+        log_action('holiday_added', f"Holiday '{title}' {start_date}–{end_date}. {len(affected)} appointment(s) cancelled.")
+        db.session.commit()
+        flash(f'Holiday added. {len(affected)} appointment(s) cancelled.', 'success')
+        return redirect(url_for('admin.manage_holidays'))
+
+    holidays = GlobalHoliday.query.order_by(GlobalHoliday.start_date).all()
+    today    = datetime.now(timezone.utc).date()
+    return render_template('admin/holidays.html', holidays=holidays, today=today)
+
+
+@admin_bp.route('/admin/holidays/delete/<int:holiday_id>')
+@login_required
+@admin_required
+def delete_holiday(holiday_id):
+    holiday = db.session.get(GlobalHoliday, holiday_id)
+    if not holiday:
+        flash('Holiday not found.', 'danger')
+        return redirect(url_for('admin.manage_holidays'))
+    log_action('holiday_deleted', f"Deleted holiday '{holiday.title}' {holiday.start_date}–{holiday.end_date}")
+    db.session.delete(holiday)
+    db.session.commit()
+    flash('Holiday removed.', 'success')
+    return redirect(url_for('admin.manage_holidays'))
