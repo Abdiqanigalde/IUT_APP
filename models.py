@@ -109,7 +109,7 @@ class Appointment(db.Model):
     student_name    = db.Column(db.String(100), nullable=False)
     student_id_num  = db.Column(db.String(50),  nullable=False)
     department      = db.Column(db.String(100),  nullable=False)
-    officer_id      = db.Column(db.Integer, db.ForeignKey('officer.id'), nullable=True)  # ← CHANGED
+    officer_id      = db.Column(db.Integer, db.ForeignKey('officer.id'), nullable=True)
     officer         = db.relationship('Officer', backref='appointments')
     day             = db.Column(db.String(20),  nullable=False)
     date            = db.Column(db.Date,         nullable=False)
@@ -235,7 +235,6 @@ class VisaApplication(db.Model):
     created_at      = db.Column(db.DateTime,     default=lambda: datetime.now(timezone.utc))
     updated_at      = db.Column(db.DateTime,     default=lambda: datetime.now(timezone.utc))
 
-    # Document URLs (stored on Cloudinary)
     passport_copy   = db.Column(db.String(500), nullable=True)
     photo           = db.Column(db.String(500), nullable=True)
     offer_letter    = db.Column(db.String(500), nullable=True)
@@ -245,3 +244,17 @@ class VisaApplication(db.Model):
     on_arrival      = db.Column(db.String(500), nullable=True)
 
     user = db.relationship('User', backref='visa_applications')
+
+
+class GlobalHoliday(db.Model):
+    __tablename__ = 'global_holiday'
+    id          = db.Column(db.Integer, primary_key=True)
+    title       = db.Column(db.String(100), nullable=False)
+    start_date  = db.Column(db.Date, nullable=False)
+    end_date    = db.Column(db.Date, nullable=False)
+    reason      = db.Column(db.String(255), nullable=True)
+    created_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def is_active_on(self, date):
+        return self.start_date <= date <= self.end_date
