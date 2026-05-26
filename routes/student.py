@@ -25,6 +25,14 @@ def get_unavailability(officer_id, date):
     ).first()
 
 
+def get_global_holiday(date):
+    from models import GlobalHoliday
+    return GlobalHoliday.query.filter(
+        GlobalHoliday.start_date <= date,
+        GlobalHoliday.end_date   >= date
+    ).first()
+
+
 def officer_slots_for_date(officer, date):
     """Return list of time-slot strings for this officer on this date, respecting working hours."""
     from app import generate_time_slots
@@ -173,6 +181,12 @@ def book_appointment():
         # ── Day-off check ─────────────────────────────────────────────────────
         if is_day_off(officer, booking_date):
             flash(f'{officer.name} does not take appointments on {day_name}s.', 'danger')
+            return render_template('student/book.html', form=form)
+
+        # ── Global holiday check ──────────────────────────────────────────────
+        holiday = get_global_holiday(booking_date)
+        if holiday:
+            flash(f'No appointments available — University Holiday: {holiday.title}.', 'danger')
             return render_template('student/book.html', form=form)
 
         # ── Unavailability check ──────────────────────────────────────────────
@@ -329,6 +343,12 @@ def reschedule_appointment(appointment_id):
 
         if is_day_off(officer, new_date):
             flash(f'{officer.name} does not take appointments on {day_name}s.', 'danger')
+            return render_template('student/reschedule.html', form=form, apt=apt)
+
+        # ── Global holiday check ──────────────────────────────────────────────
+        holiday = get_global_holiday(new_date)
+        if holiday:
+            flash(f'No appointments available — University Holiday: {holiday.title}.', 'danger')
             return render_template('student/reschedule.html', form=form, apt=apt)
 
         unavail = get_unavailability(officer.id, new_date)
@@ -647,6 +667,16 @@ def get_slots():
             'slots': []
         })
 
+    # ── Global holiday check ──────────────────────────────────────────────────
+    holiday = get_global_holiday(date_obj)
+    if holiday:
+        return jsonify({
+            'unavailable': True,
+            'reason': f'University Holiday: {holiday.title}',
+            'officer_name': officer.name,
+            'slots': []
+        })
+
     unavail = get_unavailability(officer_id, date_obj)
     if unavail:
         return jsonify({
@@ -717,6 +747,9 @@ def calendar_data():
             continue
         if is_day_off(officer, d):
             result.append({'date': d.isoformat(), 'status': 'off'})
+            continue
+        if get_global_holiday(d):
+            result.append({'date': d.isoformat(), 'status': 'unavailable'})
             continue
         if get_unavailability(int(officer_id), d):
             result.append({'date': d.isoformat(), 'status': 'unavailable'})
@@ -1030,6 +1063,12 @@ def book_calcom_submit():
         flash(f'{officer.name} does not take appointments on {day_name}s.', 'danger')
         return redirect(url_for('student.book_calcom'))
 
+    # ── Global holiday check ──────────────────────────────────────────────────
+    holiday = get_global_holiday(booking_date)
+    if holiday:
+        flash(f'No appointments available — University Holiday: {holiday.title}.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
     unavail = get_unavailability(officer.id, booking_date)
     if unavail:
         flash(f'{officer.name} is unavailable: {unavail.reason}', 'danger')
@@ -1134,6 +1173,11 @@ def get_slots_calcom():
     # Off / unavailable checks
     if is_day_off(officer, date_obj):
         return jsonify({'unavailable': True, 'reason': 'Day off', 'slots': []})
+
+    # ── Global holiday check ──────────────────────────────────────────────────
+    holiday = get_global_holiday(date_obj)
+    if holiday:
+        return jsonify({'unavailable': True, 'reason': f'University Holiday: {holiday.title}', 'slots': []})
 
     unavail = get_unavailability(officer_id, date_obj)
     if unavail:
