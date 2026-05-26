@@ -10,7 +10,7 @@
       <div class="alert alert-info small mb-4">
         <strong>Current:</strong> {{ apt.officer.name }} — {{ apt.date.strftime('%d %b %Y') }} at {{ apt.time }}
       </div>
-      <form method="POST">
+      <form method="POST" id="rescheduleForm">
         {{ form.hidden_tag() }}
         <div class="mb-3">
           {{ form.date.label(class="form-label fw-semibold") }}
@@ -32,7 +32,7 @@
           <div id="slotsContainer" class="d-flex flex-wrap gap-2 mt-2">
             <p class="text-muted small">Pick a date to see slots.</p>
           </div>
-          <!-- Hidden input that holds the selected time value sent to Flask -->
+          {# Hidden input — bypasses WTForms choice validation, sends raw time directly #}
           <input type="hidden" name="time" id="timeInput" value="">
         </div>
 
@@ -82,54 +82,54 @@
 </style>
 
 <script>
-const officerId = {{ apt.officer_id }};
-const dateInput = document.getElementById('dateInput');
-const timeInput = document.getElementById('timeInput');
-const slotsContainer = document.getElementById('slotsContainer');
-const noSlotWarning = document.getElementById('noSlotWarning');
-const rescheduleBtn = document.getElementById('rescheduleBtn');
-const theForm = rescheduleBtn.closest('form');
+const officerId       = {{ apt.officer_id }};
+const dateInput       = document.getElementById('dateInput');
+const timeInput       = document.getElementById('timeInput');
+const slotsContainer  = document.getElementById('slotsContainer');
+const noSlotWarning   = document.getElementById('noSlotWarning');
+const rescheduleBtn   = document.getElementById('rescheduleBtn');
+const rescheduleForm  = document.getElementById('rescheduleForm');
 
-const todayStr = new Date().toISOString().split('T')[0];
-dateInput.min = todayStr;
+dateInput.min = new Date().toISOString().split('T')[0];
 
 let selectedDuration = 15;
-let selectedRawTime = '';   // stores e.g. "09:00" as returned by API
+let selectedTime = '';   // raw "HH:MM" from API — stored directly to DB
 
-// ── Duration buttons ──────────────────────────────────────────────────────────
+// ── Duration ──────────────────────────────────────────────────────────────────
 document.getElementById('durationRow').addEventListener('click', e => {
     const btn = e.target.closest('.dur-btn');
     if (!btn) return;
     document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     selectedDuration = parseInt(btn.dataset.min);
-    selectedRawTime = '';
+    selectedTime = '';
     timeInput.value = '';
     if (dateInput.value) loadSlots(dateInput.value);
 });
 
-// ── Date change ───────────────────────────────────────────────────────────────
+// ── Date ──────────────────────────────────────────────────────────────────────
 dateInput.addEventListener('change', () => {
-    if (!dateInput.value) return;
-    selectedRawTime = '';
+    selectedTime = '';
     timeInput.value = '';
-    loadSlots(dateInput.value);
+    if (dateInput.value) loadSlots(dateInput.value);
 });
 
-// ── Reschedule button ─────────────────────────────────────────────────────────
+// ── Submit ────────────────────────────────────────────────────────────────────
 rescheduleBtn.addEventListener('click', () => {
-    if (!selectedRawTime) {
+    if (!selectedTime) {
         noSlotWarning.classList.remove('d-none');
         slotsContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
     }
     noSlotWarning.classList.add('d-none');
-    timeInput.value = selectedRawTime;
-    theForm.submit();
+    timeInput.value = selectedTime;
+    rescheduleForm.submit();
 });
 
-// ── Format helpers ────────────────────────────────────────────────────────────
-function to12h(h, m) {
+// ── Display helpers ───────────────────────────────────────────────────────────
+function to12h(totalMin) {
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
     const period = h < 12 ? 'AM' : 'PM';
     const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
     return `${h12}:${String(m).padStart(2, '0')} ${period}`;
@@ -137,24 +137,15 @@ function to12h(h, m) {
 
 function slotLabel(rawTime, durationMin) {
     const [h, m] = rawTime.split(':').map(Number);
-    const endMin = h * 60 + m + durationMin;
-    const eh = Math.floor(endMin / 60), em = endMin % 60;
-    return `${to12h(h, m)} – ${to12h(eh, em)}`;
-}
-
-// Convert "09:00" → "09:00 AM" format expected by Flask form/backend
-function toFormTime(rawTime) {
-    const [h, m] = rawTime.split(':').map(Number);
-    const period = h < 12 ? 'AM' : 'PM';
-    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+    const startMin = h * 60 + m;
+    return `${to12h(startMin)} – ${to12h(startMin + durationMin)}`;
 }
 
 // ── Load slots ────────────────────────────────────────────────────────────────
 function loadSlots(date) {
     slotsContainer.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>';
     timeInput.value = '';
-    selectedRawTime = '';
+    selectedTime = '';
 
     fetch(`/api/slots/calcom?officer=${officerId}&date=${date}&duration=${selectedDuration}`)
         .then(r => r.json())
@@ -167,31 +158,27 @@ function loadSlots(date) {
             }
 
             const slots = data.slots || [];
-            if (slots.length === 0) {
+            if (!slots.length) {
                 slotsContainer.innerHTML = '<p class="text-muted small mb-0">No slots available for this date.</p>';
                 return;
             }
 
             slots.forEach(slot => {
-                const isAvailable = slot.available;
                 const div = document.createElement('div');
-                div.className = 'slot-item' + (isAvailable ? '' : ' disabled');
-
+                div.className = 'slot-item' + (slot.available ? '' : ' disabled');
                 let label = slotLabel(slot.time, selectedDuration);
-                if (!isAvailable && slot.waiters > 0) label += ` (${slot.waiters} waiting)`;
+                if (!slot.available && slot.waiters > 0) label += ` (${slot.waiters} waiting)`;
                 div.textContent = label;
 
-                if (isAvailable) {
+                if (slot.available) {
                     div.addEventListener('click', () => {
                         document.querySelectorAll('.slot-item').forEach(s => s.classList.remove('selected'));
                         div.classList.add('selected');
-                        // Store the formatted time the backend expects
-                        selectedRawTime = toFormTime(slot.time);
-                        timeInput.value = selectedRawTime;
+                        selectedTime = slot.time;   // e.g. "09:00" — stored as-is
+                        timeInput.value = selectedTime;
                         noSlotWarning.classList.add('d-none');
                     });
                 }
-
                 slotsContainer.appendChild(div);
             });
         })
