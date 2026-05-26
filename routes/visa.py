@@ -23,26 +23,14 @@ def upload_to_cloudinary(file, folder, public_id):
     if not file or not allowed_file(file.filename):
         return None
     try:
-        ext = file.filename.rsplit('.', 1)[1].lower()
-        if ext == 'pdf':
-            result = cloudinary.uploader.upload(
-                file,
-                folder=f'iut_visa/{folder}',
-                public_id=public_id,
-                resource_type='image',
-                format='jpg',
-                overwrite=True,
-                access_mode='public',
-            )
-        else:
-            result = cloudinary.uploader.upload(
-                file,
-                folder=f'iut_visa/{folder}',
-                public_id=public_id,
-                resource_type='image',
-                overwrite=True,
-                access_mode='public',
-            )
+        result = cloudinary.uploader.upload(
+            file,
+            folder=f'iut_visa/{folder}',
+            public_id=public_id,
+            resource_type='image',
+            overwrite=True,
+            access_mode='public',
+        )
         return result.get('secure_url')
     except Exception as e:
         print(f'[IUT] Cloudinary upload error: {e}')
@@ -67,9 +55,12 @@ def visa_submit():
 
     uid = current_user.id
 
-    existing = VisaApplication.query.filter_by(user_id=uid).first()
-    if existing and existing.status == 'Pending':
-        flash('You already have a pending visa application.', 'warning')
+    existing = VisaApplication.query.filter_by(user_id=uid)\
+                .order_by(VisaApplication.created_at.desc()).first()
+
+    # Block if already pending or approved
+    if existing and existing.status in ('Pending', 'Approved'):
+        flash('You already have an active visa application.', 'warning')
         return redirect(url_for('visa.visa_guide'))
 
     student_name   = request.form.get('student_name',   current_user.name).strip()
@@ -80,30 +71,50 @@ def visa_submit():
         flash('Student ID and Department are required.', 'danger')
         return redirect(url_for('visa.visa_guide'))
 
-    def up(field):
+    def up(field, old_url=None):
         f = request.files.get(field)
         if f and f.filename:
             return upload_to_cloudinary(f, f'user_{uid}', f'{field}_{uid}')
-        return None
+        return old_url  # keep existing URL if no new file uploaded
 
-    app_obj = VisaApplication(
-        user_id        = uid,
-        student_name   = student_name,
-        student_id_num = student_id_num,
-        department     = department,
-        status         = 'Pending',
-        passport_copy  = up('passport_copy'),
-        photo          = up('photo'),
-        offer_letter   = up('offer_letter'),
-        student_id_doc = up('student_id_doc'),
-        expired_visa   = up('expired_visa'),
-        grade_sheet    = up('grade_sheet'),
-        on_arrival     = up('on_arrival'),
-    )
-    db.session.add(app_obj)
-    db.session.commit()
+    if existing and existing.status == 'Rejected':
+        # UPDATE the existing rejected application instead of creating new one
+        existing.student_name   = student_name
+        existing.student_id_num = student_id_num
+        existing.department     = department
+        existing.status         = 'Pending'
+        existing.officer_note   = None
+        existing.updated_at     = datetime.now(timezone.utc)
+        existing.passport_copy  = up('passport_copy',  existing.passport_copy)
+        existing.photo          = up('photo',          existing.photo)
+        existing.offer_letter   = up('offer_letter',   existing.offer_letter)
+        existing.student_id_doc = up('student_id_doc', existing.student_id_doc)
+        existing.expired_visa   = up('expired_visa',   existing.expired_visa)
+        existing.grade_sheet    = up('grade_sheet',    existing.grade_sheet)
+        existing.on_arrival     = up('on_arrival',     existing.on_arrival)
+        db.session.commit()
+        flash('Application resubmitted successfully! The visa officer will review it.', 'success')
 
-    flash('Visa documents submitted successfully! The visa officer will review them.', 'success')
+    else:
+        # CREATE new application (first time)
+        app_obj = VisaApplication(
+            user_id        = uid,
+            student_name   = student_name,
+            student_id_num = student_id_num,
+            department     = department,
+            status         = 'Pending',
+            passport_copy  = up('passport_copy'),
+            photo          = up('photo'),
+            offer_letter   = up('offer_letter'),
+            student_id_doc = up('student_id_doc'),
+            expired_visa   = up('expired_visa'),
+            grade_sheet    = up('grade_sheet'),
+            on_arrival     = up('on_arrival'),
+        )
+        db.session.add(app_obj)
+        db.session.commit()
+        flash('Visa documents submitted successfully! The visa officer will review them.', 'success')
+
     return redirect(url_for('visa.visa_guide'))
 
 
