@@ -56,6 +56,7 @@
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_officers') }}"><i class="fas fa-users me-1"></i>Officers</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_students') }}"><i class="fas fa-user-graduate me-1"></i>Students</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.audit_log') }}"><i class="fas fa-clipboard-list me-1"></i>Audit</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_holidays') }}"><i class="fas fa-umbrella-beach me-1"></i>Holidays</a></li>
                     {% elif current_user.role == 'officer' %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.dashboard') }}"><i class="fas fa-home me-1"></i>Dashboard</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.schedule') }}"><i class="fas fa-calendar-alt me-1"></i>Schedule</a></li>
@@ -130,7 +131,6 @@ socket.on('connect', () => {
   socket.emit('join', { user_id: {{ current_user.id }} });
 });
 socket.on('appointment_update', (data) => {
-  // Show toast notification
   const statusColors = { Approved: 'success', Rejected: 'danger', Completed: 'primary', Pending: 'warning' };
   const color = statusColors[data.status] || 'secondary';
   const toastEl = document.createElement('div');
@@ -141,7 +141,6 @@ socket.on('appointment_update', (data) => {
   document.body.appendChild(toastEl);
   new bootstrap.Toast(toastEl, { delay: 5000 }).show();
 
-  // Update badge count
   fetch('/api/notifications/unread-count')
     .then(r => r.json())
     .then(d => {
