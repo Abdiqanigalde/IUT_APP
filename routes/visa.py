@@ -37,6 +37,68 @@ def upload_to_cloudinary(file, folder, public_id):
         return None
 
 
+def send_visa_email(student, status, note=''):
+    """Send email to student when visa application status changes."""
+    try:
+        from utils import send_email
+
+        if status == 'Approved':
+            subject = '✅ Visa Application Approved — IUT'
+            body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:linear-gradient(135deg,#0d4f3c,#1a7a5e);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
+                <h1 style="color:white;margin:0;font-size:1.6rem;">✅ Application Approved!</h1>
+              </div>
+              <div style="background:#f9fafb;padding:28px;border-radius:0 0 12px 12px;border:1px solid #e5e7eb;">
+                <p style="font-size:1rem;color:#374151;">Dear <strong>{student.name}</strong>,</p>
+                <p style="color:#374151;">Congratulations! Your visa document application has been <strong style="color:#16a34a;">approved</strong> by the visa officer.</p>
+                {"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Officer Note:</strong> " + note + "</div>" if note else ""}
+                <p style="color:#374151;">You may now proceed with the next steps of your visa application process.</p>
+                <div style="text-align:center;margin-top:24px;">
+                  <a href="https://iut-app.onrender.com/student/visa-guide"
+                     style="background:#0d4f3c;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">
+                    View Application
+                  </a>
+                </div>
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+                <p style="color:#9ca3af;font-size:.82rem;text-align:center;">IUT University Appointment Management System</p>
+              </div>
+            </div>
+            """
+
+        elif status == 'Rejected':
+            subject = '❌ Visa Application Rejected — IUT'
+            body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:linear-gradient(135deg,#991b1b,#dc2626);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
+                <h1 style="color:white;margin:0;font-size:1.6rem;">❌ Application Rejected</h1>
+              </div>
+              <div style="background:#f9fafb;padding:28px;border-radius:0 0 12px 12px;border:1px solid #e5e7eb;">
+                <p style="font-size:1rem;color:#374151;">Dear <strong>{student.name}</strong>,</p>
+                <p style="color:#374151;">Unfortunately, your visa document application has been <strong style="color:#dc2626;">rejected</strong> by the visa officer.</p>
+                {"<div style='background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Reason:</strong> " + note + "</div>" if note else ""}
+                <p style="color:#374151;">Please log in to review the feedback, correct your documents, and resubmit your application.</p>
+                <div style="text-align:center;margin-top:24px;">
+                  <a href="https://iut-app.onrender.com/student/visa-guide"
+                     style="background:#dc2626;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">
+                    Resubmit Application
+                  </a>
+                </div>
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+                <p style="color:#9ca3af;font-size:.82rem;text-align:center;">IUT University Appointment Management System</p>
+              </div>
+            </div>
+            """
+        else:
+            return
+
+        send_email(subject, [student.email], body)
+        print(f'[IUT] Visa email sent to {student.email} — {status}')
+
+    except Exception as e:
+        print(f'[IUT] Visa email error: {e}')
+
+
 @visa_bp.route('/student/visa-guide')
 @login_required
 def visa_guide():
@@ -58,7 +120,6 @@ def visa_submit():
     existing = VisaApplication.query.filter_by(user_id=uid)\
                 .order_by(VisaApplication.created_at.desc()).first()
 
-    # Block if already pending or approved
     if existing and existing.status in ('Pending', 'Approved'):
         flash('You already have an active visa application.', 'warning')
         return redirect(url_for('visa.visa_guide'))
@@ -75,10 +136,9 @@ def visa_submit():
         f = request.files.get(field)
         if f and f.filename:
             return upload_to_cloudinary(f, f'user_{uid}', f'{field}_{uid}')
-        return old_url  # keep existing URL if no new file uploaded
+        return old_url
 
     if existing and existing.status == 'Rejected':
-        # UPDATE the existing rejected application instead of creating new one
         existing.student_name   = student_name
         existing.student_id_num = student_id_num
         existing.department     = department
@@ -96,7 +156,6 @@ def visa_submit():
         flash('Application resubmitted successfully! The visa officer will review it.', 'success')
 
     else:
-        # CREATE new application (first time)
         app_obj = VisaApplication(
             user_id        = uid,
             student_name   = student_name,
@@ -161,12 +220,19 @@ def visa_update_status(app_id):
     application.updated_at   = datetime.now(timezone.utc)
     db.session.commit()
 
+    # In-app notification
     from models import Notification
     db.session.add(Notification(
         user_id = application.user_id,
         message = f'Your visa application has been {status}. {("Note: " + note) if note else ""}'
     ))
     db.session.commit()
+
+    # Email notification (only for Approved/Rejected)
+    if status in ('Approved', 'Rejected'):
+        student = db.session.get(User, application.user_id)
+        if student:
+            send_visa_email(student, status, note)
 
     flash(f'Application {status} successfully.', 'success')
     return redirect(url_for('visa.visa_officer_dashboard'))
