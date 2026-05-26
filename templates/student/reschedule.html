@@ -32,10 +32,18 @@
           <div id="slotsContainer" class="d-flex flex-wrap gap-2 mt-2">
             <p class="text-muted small">Pick a date to see slots.</p>
           </div>
-          {{ form.time(class="d-none", id="timeInput") }}
+          <!-- Hidden input that holds the selected time value sent to Flask -->
+          <input type="hidden" name="time" id="timeInput" value="">
         </div>
+
+        <div id="noSlotWarning" class="alert alert-warning small d-none">
+          Please select a time slot before rescheduling.
+        </div>
+
         <div class="d-grid mt-4">
-          {{ form.submit(class="btn btn-primary") }}
+          <button type="button" class="btn btn-primary" id="rescheduleBtn">
+            <i class="fas fa-calendar-check me-1"></i> Reschedule
+          </button>
         </div>
       </form>
     </div>
@@ -45,14 +53,32 @@
 
 {% block scripts %}
 <style>
-.slot-item { padding:10px 14px; border:2px solid #e9ecef; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:500; transition:.2s; }
-.slot-item:hover:not(.disabled) { border-color:#4361ee; background:#f0f3ff; }
-.slot-item.selected { background:#4361ee; color:#fff; border-color:#4361ee; }
-.slot-item.disabled { background:#f1f3f5; color:#adb5bd; cursor:not-allowed; }
-
-.dur-btn { padding:7px 18px; font-size:.85rem; font-weight:500; border:2px solid #e9ecef; border-radius:8px; background:#fff; color:#495057; cursor:pointer; transition:.2s; }
-.dur-btn:hover { border-color:#4361ee; background:#f0f3ff; }
-.dur-btn.active { background:#4361ee; color:#fff; border-color:#4361ee; }
+.slot-item {
+  padding: 10px 14px;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: .85rem;
+  font-weight: 500;
+  transition: .2s;
+  user-select: none;
+}
+.slot-item:hover:not(.disabled) { border-color: #4361ee; background: #f0f3ff; }
+.slot-item.selected { background: #4361ee !important; color: #fff !important; border-color: #4361ee !important; }
+.slot-item.disabled { background: #f1f3f5; color: #adb5bd; cursor: not-allowed; opacity: 0.7; }
+.dur-btn {
+  padding: 7px 18px;
+  font-size: .85rem;
+  font-weight: 500;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  background: #fff;
+  color: #495057;
+  cursor: pointer;
+  transition: .2s;
+}
+.dur-btn:hover { border-color: #4361ee; background: #f0f3ff; }
+.dur-btn.active { background: #4361ee; color: #fff; border-color: #4361ee; }
 </style>
 
 <script>
@@ -60,28 +86,75 @@ const officerId = {{ apt.officer_id }};
 const dateInput = document.getElementById('dateInput');
 const timeInput = document.getElementById('timeInput');
 const slotsContainer = document.getElementById('slotsContainer');
-const today = new Date().toISOString().split('T')[0];
-dateInput.min = today;
+const noSlotWarning = document.getElementById('noSlotWarning');
+const rescheduleBtn = document.getElementById('rescheduleBtn');
+const theForm = rescheduleBtn.closest('form');
+
+const todayStr = new Date().toISOString().split('T')[0];
+dateInput.min = todayStr;
 
 let selectedDuration = 15;
+let selectedRawTime = '';   // stores e.g. "09:00" as returned by API
 
+// ── Duration buttons ──────────────────────────────────────────────────────────
 document.getElementById('durationRow').addEventListener('click', e => {
     const btn = e.target.closest('.dur-btn');
     if (!btn) return;
     document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     selectedDuration = parseInt(btn.dataset.min);
+    selectedRawTime = '';
+    timeInput.value = '';
     if (dateInput.value) loadSlots(dateInput.value);
 });
 
+// ── Date change ───────────────────────────────────────────────────────────────
 dateInput.addEventListener('change', () => {
     if (!dateInput.value) return;
+    selectedRawTime = '';
+    timeInput.value = '';
     loadSlots(dateInput.value);
 });
 
+// ── Reschedule button ─────────────────────────────────────────────────────────
+rescheduleBtn.addEventListener('click', () => {
+    if (!selectedRawTime) {
+        noSlotWarning.classList.remove('d-none');
+        slotsContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+    noSlotWarning.classList.add('d-none');
+    timeInput.value = selectedRawTime;
+    theForm.submit();
+});
+
+// ── Format helpers ────────────────────────────────────────────────────────────
+function to12h(h, m) {
+    const period = h < 12 ? 'AM' : 'PM';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function slotLabel(rawTime, durationMin) {
+    const [h, m] = rawTime.split(':').map(Number);
+    const endMin = h * 60 + m + durationMin;
+    const eh = Math.floor(endMin / 60), em = endMin % 60;
+    return `${to12h(h, m)} – ${to12h(eh, em)}`;
+}
+
+// Convert "09:00" → "09:00 AM" format expected by Flask form/backend
+function toFormTime(rawTime) {
+    const [h, m] = rawTime.split(':').map(Number);
+    const period = h < 12 ? 'AM' : 'PM';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+// ── Load slots ────────────────────────────────────────────────────────────────
 function loadSlots(date) {
-    slotsContainer.innerHTML = '<div class="spinner-border spinner-border-sm text-primary"></div>';
+    slotsContainer.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>';
     timeInput.value = '';
+    selectedRawTime = '';
 
     fetch(`/api/slots/calcom?officer=${officerId}&date=${date}&duration=${selectedDuration}`)
         .then(r => r.json())
@@ -89,13 +162,13 @@ function loadSlots(date) {
             slotsContainer.innerHTML = '';
 
             if (data.unavailable) {
-                slotsContainer.innerHTML = `<div class="alert alert-danger small">${data.reason}</div>`;
+                slotsContainer.innerHTML = `<div class="alert alert-danger small mb-0">${data.reason || 'Officer unavailable on this date.'}</div>`;
                 return;
             }
 
             const slots = data.slots || [];
             if (slots.length === 0) {
-                slotsContainer.innerHTML = '<p class="text-muted small">No slots available for this date.</p>';
+                slotsContainer.innerHTML = '<p class="text-muted small mb-0">No slots available for this date.</p>';
                 return;
             }
 
@@ -104,28 +177,26 @@ function loadSlots(date) {
                 const div = document.createElement('div');
                 div.className = 'slot-item' + (isAvailable ? '' : ' disabled');
 
-                // Format "09:00" → "9:00 AM – 9:30 AM"
-                const [h, m] = slot.time.split(':').map(Number);
-                const period = h < 12 ? 'AM' : 'PM';
-                const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-                const endMin = h * 60 + m + selectedDuration;
-                const eh = Math.floor(endMin / 60), em = endMin % 60;
-                const ePeriod = eh < 12 ? 'AM' : 'PM';
-                const eh12 = eh === 0 ? 12 : eh > 12 ? eh - 12 : eh;
-                let label = `${h12}:${String(m).padStart(2,'0')} ${period} – ${eh12}:${String(em).padStart(2,'0')} ${ePeriod}`;
-                if (slot.waiters > 0 && !isAvailable) label += ` (${slot.waiters} waiting)`;
-
+                let label = slotLabel(slot.time, selectedDuration);
+                if (!isAvailable && slot.waiters > 0) label += ` (${slot.waiters} waiting)`;
                 div.textContent = label;
 
                 if (isAvailable) {
                     div.addEventListener('click', () => {
                         document.querySelectorAll('.slot-item').forEach(s => s.classList.remove('selected'));
                         div.classList.add('selected');
-                        timeInput.value = slot.time;
+                        // Store the formatted time the backend expects
+                        selectedRawTime = toFormTime(slot.time);
+                        timeInput.value = selectedRawTime;
+                        noSlotWarning.classList.add('d-none');
                     });
                 }
+
                 slotsContainer.appendChild(div);
             });
+        })
+        .catch(() => {
+            slotsContainer.innerHTML = '<div class="alert alert-danger small mb-0">Failed to load slots. Please try again.</div>';
         });
 }
 </script>
