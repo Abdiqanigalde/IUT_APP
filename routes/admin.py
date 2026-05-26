@@ -28,7 +28,6 @@ def log_action(action, detail):
 def dashboard():
     today = datetime.now(timezone.utc).date()
 
-    # ── Summary counts ────────────────────────────────────────────────────────
     total     = Appointment.query.count()
     pending   = Appointment.query.filter_by(status='Pending').count()
     approved  = Appointment.query.filter_by(status='Approved').count()
@@ -39,17 +38,14 @@ def dashboard():
     total_students  = User.query.filter_by(role='student').count()
     active_students = User.query.filter_by(role='student', is_active=True).count()
 
-    # ── Today schedule ────────────────────────────────────────────────────────
     today_schedule = Appointment.query.filter_by(date=today).order_by(Appointment.time).all()
 
-    # ── Last 7 days trend ─────────────────────────────────────────────────────
     weekly = []
     for i in range(6, -1, -1):
         d = today - timedelta(days=i)
         cnt = Appointment.query.filter(Appointment.date == d).count()
         weekly.append({'date': d.strftime('%a %d'), 'count': cnt})
 
-    # ── Full-year monthly data ────────────────────────────────────────────────
     months_data = []
     for m in range(1, 13):
         cnt = Appointment.query.filter(
@@ -58,7 +54,6 @@ def dashboard():
         ).count()
         months_data.append({'label': datetime(today.year, m, 1).strftime('%b'), 'count': cnt})
 
-    # ── Officer breakdown ─────────────────────────────────────────────────────
     all_officers = Officer.query.all()
     officer_names  = [o.name for o in all_officers]
     officer_counts = [Appointment.query.filter_by(officer_id=o.id).count() for o in all_officers]
@@ -89,8 +84,8 @@ def dashboard():
 @admin_required
 def manage_appointments():
     officer_filter = request.args.get('officer', '')
-    status_filter = request.args.get('status', '')
-    date_filter = request.args.get('date', '')
+    status_filter  = request.args.get('status', '')
+    date_filter    = request.args.get('date', '')
 
     query = Appointment.query.join(Officer)
     if officer_filter:
@@ -106,9 +101,8 @@ def manage_appointments():
     appointments = query.order_by(Appointment.date.desc(), Appointment.time.desc()).all()
     all_officers = Officer.query.all()
 
-    # Bulk action
     if request.method == 'POST':
-        ids = request.form.getlist('selected_ids')
+        ids    = request.form.getlist('selected_ids')
         action = request.form.get('bulk_action')
         if ids and action in ['Approved', 'Rejected']:
             for aid in ids:
@@ -130,6 +124,7 @@ def manage_appointments():
                            all_officers=all_officers,
                            officer_filter=officer_filter, status_filter=status_filter, date_filter=date_filter)
 
+
 @admin_bp.route('/admin/update_status/<int:appointment_id>/<string:status>', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -138,7 +133,6 @@ def update_status(appointment_id, status):
     if not apt:
         return redirect(url_for('admin.manage_appointments'))
 
-    # Rejection requires a note — show modal/form
     if status == 'Rejected':
         form = RejectNoteForm()
         if form.validate_on_submit():
@@ -165,20 +159,16 @@ def update_status(appointment_id, status):
         db.session.add(Notification(user_id=apt.user_id, message=msg))
         student = db.session.get(User, apt.user_id)
 
-        # Add timeline event
         from models import AppointmentTimeline
         db.session.add(AppointmentTimeline(appointment_id=apt.id, status=status,
                                            note=f"Status set to {status} by admin."))
 
         if status == 'Approved':
-            # Generate real QR code if not already set
             if not apt.qr_code_data:
                 import secrets as _s
                 from app import generate_qr_data
                 qr_data, _ = generate_qr_data(apt.id, _s.token_urlsafe(16))
                 apt.qr_code_data = qr_data
-
-            # Send QR ticket email
             from app import generate_qr_data as _gqr
             _, qr_b64 = _gqr(apt.id, apt.qr_code_data.split('-')[2] if apt.qr_code_data else 'x')
             from utils import send_email, qr_appointment_email
@@ -192,7 +182,6 @@ def update_status(appointment_id, status):
                    f"#{apt.id} ({apt.student_name} with {apt.officer.name} on {apt.date}) → {status}")
         db.session.commit()
 
-        # Real-time socket push
         try:
             from app import push_status_update
             push_status_update(apt.user_id, apt.id, status, msg)
@@ -208,7 +197,7 @@ def update_status(appointment_id, status):
 @admin_required
 def manage_students():
     search = request.args.get('search', '').strip()
-    dept = request.args.get('department', '').strip()
+    dept   = request.args.get('department', '').strip()
     status = request.args.get('status', '').strip()
 
     query = User.query.filter_by(role='student')
@@ -224,13 +213,14 @@ def manage_students():
     elif status == 'inactive':
         query = query.filter_by(is_active=False)
 
-    students = query.order_by(User.created_at.desc()).all()
-    departments = db.session.query(User.department).filter(User.role=='student', User.department != None).distinct().all()
+    students    = query.order_by(User.created_at.desc()).all()
+    departments = db.session.query(User.department).filter(User.role == 'student', User.department != None).distinct().all()
     departments = [d[0] for d in departments if d[0]]
 
     return render_template('admin/students.html', students=students,
                            search=search, dept=dept, status_filter=status,
                            departments=departments)
+
 
 @admin_bp.route('/admin/student/<int:user_id>/toggle')
 @login_required
@@ -244,6 +234,7 @@ def toggle_student(user_id):
         db.session.commit()
         flash(f'Student account {action}.', 'success')
     return redirect(url_for('admin.manage_students'))
+
 
 @admin_bp.route('/admin/student/<int:user_id>')
 @login_required
@@ -262,23 +253,18 @@ def student_detail(user_id):
 def manage_officers():
     form = OfficerProfileForm()
     if form.validate_on_submit():
-        # Check if login email is already taken
         if User.query.filter_by(email=form.login_email.data).first():
             flash('Login email already in use. Choose a different one.', 'danger')
         else:
-            off_days = ','.join(form.recurring_off_days.data) if form.recurring_off_days.data else ''
-            # Create user account for officer login
+            off_days  = ','.join(form.recurring_off_days.data) if form.recurring_off_days.data else ''
             hashed_pw = _bcrypt_admin.generate_password_hash(form.login_password.data).decode('utf-8')
             user = User(
-                name=form.name.data,
-                email=form.login_email.data,
-                password=hashed_pw,
-                role='officer',
-                is_active=True,
-                email_verified=True
+                name=form.name.data, email=form.login_email.data,
+                password=hashed_pw, role='officer',
+                is_active=True, email_verified=True
             )
             db.session.add(user)
-            db.session.flush()  # get user.id before commit
+            db.session.flush()
             officer = Officer(
                 name=form.name.data, designation=form.designation.data,
                 bio=form.bio.data, handles=form.handles.data,
@@ -293,24 +279,22 @@ def manage_officers():
             flash(f'Officer added! Login: {form.login_email.data} / Password: {form.login_password.data}', 'success')
             return redirect(url_for('admin.manage_officers'))
     officers = Officer.query.all()
-    today = datetime.now(timezone.utc).date()
+    today    = datetime.now(timezone.utc).date()
     return render_template('admin/officers.html', officers=officers, form=form, today=today)
 
-# ── Delete Officer ────────────────────────────────────────────────────────────
+
 @admin_bp.route('/admin/officer/delete/<int:officer_id>')
 @login_required
 @admin_required
 def delete_officer(officer_id):
     officer = db.session.get(Officer, officer_id)
-
     if not officer:
         flash('Officer not found.', 'danger')
         return redirect(url_for('admin.manage_officers'))
 
     appointments = Appointment.query.filter_by(officer_id=officer_id).all()
-
     for apt in appointments:
-        apt.status = 'Cancelled'
+        apt.status     = 'Cancelled'
         apt.officer_id = None
         apt.rejection_note = f'Officer {officer.name} was removed from the system.'
         db.session.add(Notification(
@@ -321,20 +305,15 @@ def delete_officer(officer_id):
         ))
 
     linked_user = User.query.filter_by(email=officer.email, role='officer').first()
-
-    log_action('officer_deleted',
-               f'Deleted {officer.name} — {len(appointments)} appointment(s) cancelled')
-
+    log_action('officer_deleted', f'Deleted {officer.name} — {len(appointments)} appointment(s) cancelled')
     db.session.delete(officer)
     if linked_user:
         db.session.delete(linked_user)
-
     db.session.commit()
-
     flash(f'Officer removed successfully. {len(appointments)} appointment(s) cancelled.', 'success')
     return redirect(url_for('admin.manage_officers'))
 
-# ── Edit Officer ──────────────────────────────────────────────────────────────
+
 @admin_bp.route('/admin/officers/<int:officer_id>/edit', methods=['POST'])
 @login_required
 @admin_required
@@ -344,15 +323,15 @@ def edit_officer(officer_id):
         flash('Officer not found.', 'danger')
         return redirect(url_for('admin.manage_officers'))
 
-    officer.name         = request.form.get('edit_name', officer.name).strip()
-    officer.designation  = request.form.get('edit_designation', officer.designation).strip()
-    officer.handles      = request.form.get('edit_handles', officer.handles or '').strip()
-    officer.room         = request.form.get('edit_room', officer.room or '').strip()
-    officer.photo_url    = request.form.get('edit_photo_url', officer.photo_url or '').strip()
-    officer.work_start   = request.form.get('edit_work_start', officer.work_start or '08:00').strip()
-    officer.work_end     = request.form.get('edit_work_end', officer.work_end or '17:00').strip()
-    officer.daily_limit  = int(request.form.get('edit_daily_limit', officer.daily_limit or 0))
-    officer.is_active    = request.form.get('edit_is_active', '1') == '1'
+    officer.name        = request.form.get('edit_name',        officer.name).strip()
+    officer.designation = request.form.get('edit_designation', officer.designation).strip()
+    officer.handles     = request.form.get('edit_handles',     officer.handles or '').strip()
+    officer.room        = request.form.get('edit_room',        officer.room or '').strip()
+    officer.photo_url   = request.form.get('edit_photo_url',   officer.photo_url or '').strip()
+    officer.work_start  = request.form.get('edit_work_start',  officer.work_start or '08:00').strip()
+    officer.work_end    = request.form.get('edit_work_end',    officer.work_end or '17:00').strip()
+    officer.daily_limit = int(request.form.get('edit_daily_limit', officer.daily_limit or 0))
+    officer.is_active   = request.form.get('edit_is_active', '1') == '1'
 
     db.session.commit()
     log_action('officer_updated', f"Updated officer profile: {officer.name}")
@@ -365,12 +344,12 @@ def edit_officer(officer_id):
 @admin_required
 def manage_hours(officer_id):
     officer = db.session.get(Officer, officer_id)
-    form = WorkingHoursForm()
+    form    = WorkingHoursForm()
     if form.validate_on_submit():
         existing = OfficerWorkingHours.query.filter_by(officer_id=officer_id, weekday=form.weekday.data).first()
         if existing:
             existing.start_time = form.start_time.data
-            existing.end_time = form.end_time.data
+            existing.end_time   = form.end_time.data
         else:
             db.session.add(OfficerWorkingHours(officer_id=officer_id, weekday=form.weekday.data,
                 start_time=form.start_time.data, end_time=form.end_time.data))
@@ -378,9 +357,8 @@ def manage_hours(officer_id):
         flash('Working hours saved!', 'success')
         return redirect(url_for('admin.manage_hours', officer_id=officer_id))
     hours = {wh.weekday: wh for wh in officer.working_hours}
-    days = ['Monday','Tuesday','Wednesday','Thursday','Friday']
+    days  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     return render_template('admin/working_hours.html', officer=officer, form=form, hours=hours, days=days)
-
 
 # ── Unavailability ────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/officer/<int:officer_id>/unavailability', methods=['GET', 'POST'])
@@ -388,7 +366,7 @@ def manage_hours(officer_id):
 @admin_required
 def manage_unavailability(officer_id):
     officer = db.session.get(Officer, officer_id)
-    form = UnavailabilityForm()
+    form    = UnavailabilityForm()
     if form.validate_on_submit():
         if form.end_date.data < form.start_date.data:
             flash('End date cannot be before start date.', 'danger')
@@ -404,7 +382,7 @@ def manage_unavailability(officer_id):
                 Appointment.status.in_(['Pending', 'Approved'])
             ).all()
             for apt in affected:
-                apt.status = 'Rejected'
+                apt.status         = 'Rejected'
                 apt.rejection_note = form.reason.data
                 db.session.add(Notification(user_id=apt.user_id,
                     message=f"Your appointment with {officer.name} on {apt.date} was cancelled: {form.reason.data}"))
@@ -422,6 +400,7 @@ def manage_unavailability(officer_id):
     today = datetime.now(timezone.utc).date()
     return render_template('admin/unavailability.html', officer=officer, form=form, periods=periods, today=today)
 
+
 @admin_bp.route('/admin/unavailability/delete/<int:period_id>')
 @login_required
 @admin_required
@@ -436,15 +415,15 @@ def delete_unavailability(period_id):
     flash('Unavailability removed.', 'success')
     return redirect(url_for('admin.manage_unavailability', officer_id=oid))
 
-# ── Send reminders (call this via a cron job or manually) ─────────────────────
+# ── Send reminders ────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/send-reminders')
 @login_required
 @admin_required
 def send_reminders():
     from utils import send_email, reminder_email
     tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
-    apts = Appointment.query.filter_by(date=tomorrow, status='Approved', reminder_sent=False).all()
-    sent = 0
+    apts     = Appointment.query.filter_by(date=tomorrow, status='Approved', reminder_sent=False).all()
+    sent     = 0
     for apt in apts:
         student = db.session.get(User, apt.user_id)
         send_email("Appointment Reminder — Tomorrow — IUT", [student.email], reminder_email(apt, student))
@@ -464,16 +443,16 @@ def audit_log():
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
     return render_template('admin/audit_log.html', logs=logs)
 
-
 # ── Export CSV ────────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/export/csv')
 @login_required
 @admin_required
 def export_csv():
     appointments = Appointment.query.all()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['ID','Student Name','Student ID','Department','Officer','Date','Time','Status','Rejection Note'])
+    output       = io.StringIO()
+    writer       = csv.writer(output)
+    writer.writerow(['ID', 'Student Name', 'Student ID', 'Department', 'Officer',
+                     'Date', 'Time', 'Status', 'Rejection Note'])
     for apt in appointments:
         writer.writerow([apt.id, apt.student_name, apt.student_id_num, apt.department,
                          apt.officer.name, apt.date, apt.time, apt.status, apt.rejection_note or ''])
@@ -496,7 +475,7 @@ def profile():
             if User.query.filter_by(email=form.email.data).first():
                 flash('Email already in use.', 'danger')
                 return render_template('profile.html', form=form)
-        current_user.name = form.name.data
+        current_user.name  = form.name.data
         current_user.email = form.email.data
         if form.new_password.data:
             if not _bcrypt.check_password_hash(current_user.password, form.current_password.data):
@@ -507,22 +486,20 @@ def profile():
         flash('Profile updated!', 'success')
         return redirect(url_for('admin.profile'))
     elif request.method == 'GET':
-        form.name.data = current_user.name
+        form.name.data  = current_user.name
         form.email.data = current_user.email
     return render_template('profile.html', form=form)
 
-
 # ── Global Holidays ───────────────────────────────────────────────────────────
-
 @admin_bp.route('/admin/holidays', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def manage_holidays():
     if request.method == 'POST':
-        title      = request.form.get('title', '').strip()
-        start_str  = request.form.get('start_date', '').strip()
-        end_str    = request.form.get('end_date', '').strip()
-        reason     = request.form.get('reason', '').strip()
+        title     = request.form.get('title', '').strip()
+        start_str = request.form.get('start_date', '').strip()
+        end_str   = request.form.get('end_date', '').strip()
+        reason    = request.form.get('reason', '').strip()
 
         if not title or not start_str or not end_str:
             flash('All fields are required.', 'danger')
@@ -542,7 +519,6 @@ def manage_holidays():
         holiday = GlobalHoliday(title=title, start_date=start_date, end_date=end_date, reason=reason or None)
         db.session.add(holiday)
 
-        # Cancel all Pending/Approved appointments that fall in this range
         affected = Appointment.query.filter(
             Appointment.date >= start_date,
             Appointment.date <= end_date,
@@ -550,19 +526,20 @@ def manage_holidays():
         ).all()
 
         from utils import send_email
-
         for apt in affected:
-            apt.status = 'Rejected'
+            apt.status         = 'Rejected'
             apt.rejection_note = f'University Holiday: {title}'
             db.session.add(Notification(
                 user_id=apt.user_id,
                 message=f'Your appointment on {apt.date.strftime("%d %b %Y")} was cancelled due to a university holiday: {title}.'
             ))
-            # Send email to each affected student
             student = db.session.get(User, apt.user_id)
             if student and student.email:
-                email_body = _holiday_cancellation_email(apt, student, title, start_date, end_date, reason)
-                send_email("Appointment Cancelled — University Holiday — IUT", [student.email], email_body)
+                send_email(
+                    "Appointment Cancelled — University Holiday — IUT",
+                    [student.email],
+                    _holiday_cancellation_email(apt, student, title, start_date, end_date, reason)
+                )
 
         log_action('holiday_added', f"Holiday '{title}' {start_date}–{end_date}. {len(affected)} appointment(s) cancelled.")
         db.session.commit()
@@ -574,8 +551,23 @@ def manage_holidays():
     return render_template('admin/holidays.html', holidays=holidays, today=today)
 
 
+@admin_bp.route('/admin/holidays/delete/<int:holiday_id>')
+@login_required
+@admin_required
+def delete_holiday(holiday_id):
+    holiday = db.session.get(GlobalHoliday, holiday_id)
+    if not holiday:
+        flash('Holiday not found.', 'danger')
+        return redirect(url_for('admin.manage_holidays'))
+    log_action('holiday_deleted', f"Deleted holiday '{holiday.title}' {holiday.start_date}–{holiday.end_date}")
+    db.session.delete(holiday)
+    db.session.commit()
+    flash('Holiday removed.', 'success')
+    return redirect(url_for('admin.manage_holidays'))
+
+
 def _holiday_cancellation_email(apt, student, title, start_date, end_date, reason):
-    duration = (end_date - start_date).days + 1
+    duration    = (end_date - start_date).days + 1
     reason_line = f"<p><strong>Reason:</strong> {reason}</p>" if reason else ""
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;">
@@ -583,11 +575,8 @@ def _holiday_cancellation_email(apt, student, title, start_date, end_date, reaso
         <h2 style="color:#d97706;margin:0;">🏖️ University Holiday Notice</h2>
         <p style="color:#6b7280;margin-top:4px;">Islamic University of Technology</p>
       </div>
-
       <p>Dear <strong>{student.name}</strong>,</p>
-
       <p>We regret to inform you that your appointment has been <strong>cancelled</strong> due to an upcoming university holiday.</p>
-
       <div style="background:#fef3c7;border-left:4px solid #d97706;padding:16px;border-radius:4px;margin:20px 0;">
         <h3 style="margin:0 0 8px 0;color:#92400e;">🗓️ Holiday: {title}</h3>
         <p style="margin:4px 0;color:#78350f;">
@@ -596,23 +585,19 @@ def _holiday_cancellation_email(apt, student, title, start_date, end_date, reaso
         </p>
         {reason_line}
       </div>
-
       <div style="background:#f9fafb;padding:16px;border-radius:4px;margin:20px 0;">
         <h4 style="margin:0 0 8px 0;color:#374151;">Your Cancelled Appointment</h4>
         <p style="margin:4px 0;"><strong>Officer:</strong> {apt.officer.name}</p>
         <p style="margin:4px 0;"><strong>Date:</strong> {apt.date.strftime('%d %b %Y')}</p>
         <p style="margin:4px 0;"><strong>Time:</strong> {apt.time}</p>
       </div>
-
       <p>You are welcome to <strong>book a new appointment</strong> once the holiday period ends.</p>
-
       <div style="text-align:center;margin:28px 0;">
         <a href="https://iut-app.onrender.com/student/book-calcom"
            style="background:#d97706;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;">
           Book New Appointment
         </a>
       </div>
-
       <p style="color:#6b7280;font-size:13px;border-top:1px solid #e5e7eb;padding-top:16px;margin-top:24px;">
         This is an automated message from the IUT Appointment System. Please do not reply to this email.
       </p>
