@@ -311,9 +311,20 @@ def reschedule_appointment(appointment_id):
     from app import generate_time_slots
     form.time.choices = [(s, s) for s in generate_time_slots('06:00', '22:00')]
 
-    if form.validate_on_submit():
-        new_date = form.date.data
-        new_time = form.time.data
+    if request.method == 'POST':
+        new_date_str = request.form.get('date', '').strip()
+        new_time     = request.form.get('time', '').strip()
+
+        try:
+            new_date = datetime.strptime(new_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Invalid date selected.', 'danger')
+            return render_template('student/reschedule.html', form=form, apt=apt)
+
+        if not new_time:
+            flash('Please select a time slot.', 'danger')
+            return render_template('student/reschedule.html', form=form, apt=apt)
+
         day_name = new_date.strftime('%A')
 
         if is_day_off(officer, new_date):
@@ -335,7 +346,6 @@ def reschedule_appointment(appointment_id):
             flash('That slot is already taken. Please pick another.', 'danger')
             return render_template('student/reschedule.html', form=form, apt=apt)
 
-        # Student self-conflict at new slot
         self_conflict = Appointment.query.filter_by(
             user_id=current_user.id, date=new_date, time=new_time
         ).filter(
@@ -356,7 +366,6 @@ def reschedule_appointment(appointment_id):
         apt.status = 'Pending'
         db.session.flush()
 
-        # Promote someone from the old slot's waitlist
         _promote_waitlist(old_officer_id, old_date, old_time)
 
         db.session.commit()
@@ -365,7 +374,6 @@ def reschedule_appointment(appointment_id):
 
     if request.method == 'GET':
         form.date.data = apt.date
-        form.time.data = apt.time
 
     return render_template('student/reschedule.html', form=form, apt=apt)
 
