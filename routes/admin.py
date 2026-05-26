@@ -522,6 +522,7 @@ def manage_holidays():
         title      = request.form.get('title', '').strip()
         start_str  = request.form.get('start_date', '').strip()
         end_str    = request.form.get('end_date', '').strip()
+        reason     = request.form.get('reason', '').strip()
 
         if not title or not start_str or not end_str:
             flash('All fields are required.', 'danger')
@@ -538,7 +539,7 @@ def manage_holidays():
             flash('End date cannot be before start date.', 'danger')
             return redirect(url_for('admin.manage_holidays'))
 
-        holiday = GlobalHoliday(title=title, start_date=start_date, end_date=end_date)
+        holiday = GlobalHoliday(title=title, start_date=start_date, end_date=end_date, reason=reason or None)
         db.session.add(holiday)
 
         # Cancel all Pending/Approved appointments that fall in this range
@@ -547,6 +548,9 @@ def manage_holidays():
             Appointment.date <= end_date,
             Appointment.status.in_(['Pending', 'Approved'])
         ).all()
+
+        from utils import send_email
+
         for apt in affected:
             apt.status = 'Rejected'
             apt.rejection_note = f'University Holiday: {title}'
@@ -554,10 +558,15 @@ def manage_holidays():
                 user_id=apt.user_id,
                 message=f'Your appointment on {apt.date.strftime("%d %b %Y")} was cancelled due to a university holiday: {title}.'
             ))
+            # Send email to each affected student
+            student = db.session.get(User, apt.user_id)
+            if student and student.email:
+                email_body = _holiday_cancellation_email(apt, student, title, start_date, end_date, reason)
+                send_email("Appointment Cancelled — University Holiday — IUT", [student.email], email_body)
 
         log_action('holiday_added', f"Holiday '{title}' {start_date}–{end_date}. {len(affected)} appointment(s) cancelled.")
         db.session.commit()
-        flash(f'Holiday added. {len(affected)} appointment(s) cancelled.', 'success')
+        flash(f'Holiday added. {len(affected)} appointment(s) cancelled and students notified by email.', 'success')
         return redirect(url_for('admin.manage_holidays'))
 
     holidays = GlobalHoliday.query.order_by(GlobalHoliday.start_date).all()
@@ -565,16 +574,47 @@ def manage_holidays():
     return render_template('admin/holidays.html', holidays=holidays, today=today)
 
 
-@admin_bp.route('/admin/holidays/delete/<int:holiday_id>')
-@login_required
-@admin_required
-def delete_holiday(holiday_id):
-    holiday = db.session.get(GlobalHoliday, holiday_id)
-    if not holiday:
-        flash('Holiday not found.', 'danger')
-        return redirect(url_for('admin.manage_holidays'))
-    log_action('holiday_deleted', f"Deleted holiday '{holiday.title}' {holiday.start_date}–{holiday.end_date}")
-    db.session.delete(holiday)
-    db.session.commit()
-    flash('Holiday removed.', 'success')
-    return redirect(url_for('admin.manage_holidays'))
+def _holiday_cancellation_email(apt, student, title, start_date, end_date, reason):
+    duration = (end_date - start_date).days + 1
+    reason_line = f"<p><strong>Reason:</strong> {reason}</p>" if reason else ""
+    return f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <h2 style="color:#d97706;margin:0;">🏖️ University Holiday Notice</h2>
+        <p style="color:#6b7280;margin-top:4px;">Islamic University of Technology</p>
+      </div>
+
+      <p>Dear <strong>{student.name}</strong>,</p>
+
+      <p>We regret to inform you that your appointment has been <strong>cancelled</strong> due to an upcoming university holiday.</p>
+
+      <div style="background:#fef3c7;border-left:4px solid #d97706;padding:16px;border-radius:4px;margin:20px 0;">
+        <h3 style="margin:0 0 8px 0;color:#92400e;">🗓️ Holiday: {title}</h3>
+        <p style="margin:4px 0;color:#78350f;">
+          <strong>Period:</strong> {start_date.strftime('%d %b %Y')} – {end_date.strftime('%d %b %Y')}
+          ({duration} day{'s' if duration > 1 else ''})
+        </p>
+        {reason_line}
+      </div>
+
+      <div style="background:#f9fafb;padding:16px;border-radius:4px;margin:20px 0;">
+        <h4 style="margin:0 0 8px 0;color:#374151;">Your Cancelled Appointment</h4>
+        <p style="margin:4px 0;"><strong>Officer:</strong> {apt.officer.name}</p>
+        <p style="margin:4px 0;"><strong>Date:</strong> {apt.date.strftime('%d %b %Y')}</p>
+        <p style="margin:4px 0;"><strong>Time:</strong> {apt.time}</p>
+      </div>
+
+      <p>You are welcome to <strong>book a new appointment</strong> once the holiday period ends.</p>
+
+      <div style="text-align:center;margin:28px 0;">
+        <a href="https://iut-app.onrender.com/student/book-calcom"
+           style="background:#d97706;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;">
+          Book New Appointment
+        </a>
+      </div>
+
+      <p style="color:#6b7280;font-size:13px;border-top:1px solid #e5e7eb;padding-top:16px;margin-top:24px;">
+        This is an automated message from the IUT Appointment System. Please do not reply to this email.
+      </p>
+    </div>
+    """
