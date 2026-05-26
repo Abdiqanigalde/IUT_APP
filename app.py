@@ -291,6 +291,19 @@ with app.app_context():
     except Exception as _visa_err:
         print(f'[IUT] visa_application migration error (non-fatal): {_visa_err}')
 
+    # ── GlobalHoliday table migration ─────────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect5
+        inspector5  = sa_inspect5(db.engine)
+        all_tables5 = inspector5.get_table_names()
+        if 'global_holiday' not in all_tables5:
+            db.create_all()
+            print('[IUT] global_holiday table created ✅')
+        else:
+            print('[IUT] global_holiday table already exists — skipping.')
+    except Exception as _holiday_err:
+        print(f'[IUT] global_holiday migration error (non-fatal): {_holiday_err}')
+
 
 # ── Session timeout ───────────────────────────────────────────────────────────
 @app.before_request
