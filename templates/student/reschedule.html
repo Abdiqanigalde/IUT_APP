@@ -16,6 +16,18 @@
           {{ form.date.label(class="form-label fw-semibold") }}
           {{ form.date(class="form-control", type="date", id="dateInput") }}
         </div>
+
+        <!-- Duration selector -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Duration</label>
+          <div class="d-flex gap-2 flex-wrap mt-2" id="durationRow">
+            <button type="button" class="dur-btn active" data-min="15">15m</button>
+            <button type="button" class="dur-btn" data-min="30">30m</button>
+            <button type="button" class="dur-btn" data-min="45">45m</button>
+            <button type="button" class="dur-btn" data-min="60">1h</button>
+          </div>
+        </div>
+
         <div class="mb-3">
           <label class="form-label fw-semibold">New Time Slot</label>
           <div id="slotsContainer" class="d-flex flex-wrap gap-2 mt-2">
@@ -31,13 +43,19 @@
   </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 <style>
 .slot-item { padding:10px 14px; border:2px solid #e9ecef; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:500; transition:.2s; }
 .slot-item:hover:not(.disabled) { border-color:#4361ee; background:#f0f3ff; }
 .slot-item.selected { background:#4361ee; color:#fff; border-color:#4361ee; }
 .slot-item.disabled { background:#f1f3f5; color:#adb5bd; cursor:not-allowed; }
+
+.dur-btn { padding:7px 18px; font-size:.85rem; font-weight:500; border:2px solid #e9ecef; border-radius:8px; background:#fff; color:#495057; cursor:pointer; transition:.2s; }
+.dur-btn:hover { border-color:#4361ee; background:#f0f3ff; }
+.dur-btn.active { background:#4361ee; color:#fff; border-color:#4361ee; }
 </style>
+
 <script>
 const officerId = {{ apt.officer_id }};
 const dateInput = document.getElementById('dateInput');
@@ -46,19 +64,41 @@ const slotsContainer = document.getElementById('slotsContainer');
 const today = new Date().toISOString().split('T')[0];
 dateInput.min = today;
 
+let selectedDuration = 15;
+
+// Duration button click handler
+document.getElementById('durationRow').addEventListener('click', e => {
+    const btn = e.target.closest('.dur-btn');
+    if (!btn) return;
+    document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDuration = parseInt(btn.dataset.min);
+    // Rebuild slots if a date is already selected
+    if (dateInput.value) loadSlots(dateInput.value);
+});
+
 dateInput.addEventListener('change', () => {
-    const date = dateInput.value;
-    if (!date) return;
+    if (!dateInput.value) return;
+    loadSlots(dateInput.value);
+});
+
+function loadSlots(date) {
     slotsContainer.innerHTML = '<div class="spinner-border spinner-border-sm text-primary"></div>';
-    fetch(`/api/slots?officer=${officerId}&date=${date}`)
-        .then(r => r.json()).then(data => {
+    timeInput.value = '';
+    fetch(`/api/slots?officer=${officerId}&date=${date}&duration=${selectedDuration}`)
+        .then(r => r.json())
+        .then(data => {
             slotsContainer.innerHTML = '';
-            timeInput.value = '';
             if (data.unavailable) {
                 slotsContainer.innerHTML = `<div class="alert alert-danger small">${data.officer_name} is unavailable: ${data.reason}</div>`;
                 return;
             }
-            (data.slots || []).forEach(slot => {
+            const slots = data.slots || [];
+            if (slots.length === 0) {
+                slotsContainer.innerHTML = '<p class="text-muted small">No slots available for this date.</p>';
+                return;
+            }
+            slots.forEach(slot => {
                 const div = document.createElement('div');
                 div.className = 'slot-item' + (slot.available ? '' : ' disabled');
                 div.textContent = slot.time;
@@ -72,6 +112,6 @@ dateInput.addEventListener('change', () => {
                 slotsContainer.appendChild(div);
             });
         });
-});
+}
 </script>
 {% endblock %}
