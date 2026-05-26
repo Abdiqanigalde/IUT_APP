@@ -17,7 +17,6 @@
           {{ form.date(class="form-control", type="date", id="dateInput") }}
         </div>
 
-        <!-- Duration selector -->
         <div class="mb-3">
           <label class="form-label fw-semibold">Duration</label>
           <div class="d-flex gap-2 flex-wrap mt-2" id="durationRow">
@@ -66,14 +65,12 @@ dateInput.min = today;
 
 let selectedDuration = 15;
 
-// Duration button click handler
 document.getElementById('durationRow').addEventListener('click', e => {
     const btn = e.target.closest('.dur-btn');
     if (!btn) return;
     document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     selectedDuration = parseInt(btn.dataset.min);
-    // Rebuild slots if a date is already selected
     if (dateInput.value) loadSlots(dateInput.value);
 });
 
@@ -85,24 +82,42 @@ dateInput.addEventListener('change', () => {
 function loadSlots(date) {
     slotsContainer.innerHTML = '<div class="spinner-border spinner-border-sm text-primary"></div>';
     timeInput.value = '';
-    fetch(`/api/slots?officer=${officerId}&date=${date}&duration=${selectedDuration}`)
+
+    fetch(`/api/slots/calcom?officer=${officerId}&date=${date}&duration=${selectedDuration}`)
         .then(r => r.json())
         .then(data => {
             slotsContainer.innerHTML = '';
+
             if (data.unavailable) {
-                slotsContainer.innerHTML = `<div class="alert alert-danger small">${data.officer_name} is unavailable: ${data.reason}</div>`;
+                slotsContainer.innerHTML = `<div class="alert alert-danger small">${data.reason}</div>`;
                 return;
             }
+
             const slots = data.slots || [];
             if (slots.length === 0) {
                 slotsContainer.innerHTML = '<p class="text-muted small">No slots available for this date.</p>';
                 return;
             }
+
             slots.forEach(slot => {
+                const isAvailable = slot.available;
                 const div = document.createElement('div');
-                div.className = 'slot-item' + (slot.available ? '' : ' disabled');
-                div.textContent = slot.time;
-                if (slot.available) {
+                div.className = 'slot-item' + (isAvailable ? '' : ' disabled');
+
+                // Format "09:00" → "9:00 AM – 9:30 AM"
+                const [h, m] = slot.time.split(':').map(Number);
+                const period = h < 12 ? 'AM' : 'PM';
+                const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+                const endMin = h * 60 + m + selectedDuration;
+                const eh = Math.floor(endMin / 60), em = endMin % 60;
+                const ePeriod = eh < 12 ? 'AM' : 'PM';
+                const eh12 = eh === 0 ? 12 : eh > 12 ? eh - 12 : eh;
+                let label = `${h12}:${String(m).padStart(2,'0')} ${period} – ${eh12}:${String(em).padStart(2,'0')} ${ePeriod}`;
+                if (slot.waiters > 0 && !isAvailable) label += ` (${slot.waiters} waiting)`;
+
+                div.textContent = label;
+
+                if (isAvailable) {
                     div.addEventListener('click', () => {
                         document.querySelectorAll('.slot-item').forEach(s => s.classList.remove('selected'));
                         div.classList.add('selected');
