@@ -281,7 +281,7 @@ with app.app_context():
     # ── visa_application table migration ──────────────────────────────────────
     try:
         from sqlalchemy import text, inspect as sa_inspect4
-        inspector4 = sa_inspect4(db.engine)
+        inspector4  = sa_inspect4(db.engine)
         all_tables4 = inspector4.get_table_names()
         if 'visa_application' not in all_tables4:
             db.create_all()
@@ -296,11 +296,27 @@ with app.app_context():
         from sqlalchemy import text, inspect as sa_inspect5
         inspector5  = sa_inspect5(db.engine)
         all_tables5 = inspector5.get_table_names()
+        is_pg5      = 'postgresql' in str(db.engine.url)
+
         if 'global_holiday' not in all_tables5:
             db.create_all()
             print('[IUT] global_holiday table created ✅')
         else:
             print('[IUT] global_holiday table already exists — skipping.')
+
+        # Ensure reason + created_by columns exist
+        holiday_cols = {c['name'] for c in inspector5.get_columns('global_holiday')}
+        with db.engine.connect() as conn:
+            if 'reason' not in holiday_cols:
+                conn.execute(text('ALTER TABLE global_holiday ADD COLUMN reason VARCHAR(255)'))
+                conn.commit()
+                print('[IUT] global_holiday: added reason column ✅')
+            if 'created_by' not in holiday_cols:
+                ref = 'REFERENCES "user"(id)' if is_pg5 else 'REFERENCES user(id)'
+                conn.execute(text(f'ALTER TABLE global_holiday ADD COLUMN created_by INTEGER {ref}'))
+                conn.commit()
+                print('[IUT] global_holiday: added created_by column ✅')
+
     except Exception as _holiday_err:
         print(f'[IUT] global_holiday migration error (non-fatal): {_holiday_err}')
 
