@@ -1,0 +1,184 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">My Appointments</h1>
+    <div class="page-subtitle">Manage and track all your bookings</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('student.export_pdf') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="fas fa-file-pdf"></i>Export PDF
+    </a>
+    <a href="{{ url_for('student.book_calcom') }}" class="btn btn-primary btn-sm">
+      <i class="fas fa-plus"></i>Book New
+    </a>
+  </div>
+</div>
+
+{% if notifications %}
+<div class="alert alert-info alert-dismissible fade show mb-4">
+    <i class="fas fa-bell"></i>
+    <div>
+        <strong>New Notifications</strong>
+        <ul class="mb-1 ps-3 mt-1">
+            {% for n in notifications %}
+            <li style="font-size:.83rem;">{{ n.message }} <span style="color:var(--text-muted);font-size:.75rem;">({{ n.created_at.strftime('%d %b %H:%M') if n.created_at else 'N/A' }})</span></li>
+            {% endfor %}
+        </ul>
+        <a href="{{ url_for('student.read_all_notifications') }}" class="btn btn-sm btn-outline-info mt-1" style="font-size:.75rem;padding:3px 10px;">Mark all read</a>
+    </div>
+    <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Search / filter bar -->
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label">Officer</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text"><i class="fas fa-search" style="font-size:.75rem;"></i></span>
+          <input type="text" name="officer" class="form-control" placeholder="Search officer…" value="{{ search_officer }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          {% for s in ['Pending','Approved','Rejected','Completed'] %}
+          <option {{ 'selected' if search_status == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Date</label>
+        <input type="date" name="date" class="form-control form-control-sm" value="{{ search_date }}">
+      </div>
+      <div class="col-md-2 d-flex gap-1">
+        <button class="btn btn-primary btn-sm w-100"><i class="fas fa-filter"></i>Filter</button>
+        <a href="{{ url_for('student.dashboard') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th class="ps-4">Officer</th>
+            <th>Date</th>
+            <th>Time Slot</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th class="text-end pe-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% if appointments %}
+          {% for apt in appointments %}
+          <tr>
+            <td class="ps-4">
+              <span class="fw-bold" style="font-size:.85rem;">{{ apt.officer.name }}</span><br>
+              <span style="font-size:.72rem;color:var(--text-muted);">{{ apt.officer.designation }}</span>
+            </td>
+            <td>
+              <span style="font-size:.85rem;font-weight:600;">{{ apt.date.strftime('%d %b %Y') if apt.date else 'N/A' }}</span><br>
+              <span style="font-size:.72rem;color:var(--text-muted);">{{ apt.day }}</span>
+            </td>
+            <td><span class="mono" style="font-size:.82rem;font-weight:600;color:var(--brand);">{{ apt.time }}</span></td>
+            <td>
+              <span class="text-truncate d-inline-block" style="max-width:160px;font-size:.82rem;" title="{{ apt.issue }}">{{ apt.issue }}</span>
+            </td>
+            <td><span class="badge-status status-{{ apt.status.lower() }}">{{ apt.status }}</span></td>
+            <td class="text-end pe-4">
+              <div class="d-flex gap-1 justify-content-end">
+                <a href="{{ url_for('student.print_slip', appointment_id=apt.id) }}" class="btn btn-sm btn-outline-secondary" title="Print Slip" target="_blank">
+                  <i class="fas fa-print"></i>
+                </a>
+                {% if apt.status in ['Pending','Approved'] %}
+                <a href="{{ url_for('student.reschedule_appointment', appointment_id=apt.id) }}" class="btn btn-sm btn-outline-primary" title="Reschedule">
+                  <i class="fas fa-calendar-alt"></i>
+                </a>
+                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelModal{{ apt.id }}" title="Cancel">
+                  <i class="fas fa-times"></i>
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          <!-- Cancel Modal -->
+          <div class="modal fade" id="cancelModal{{ apt.id }}" tabindex="-1">
+            <div class="modal-dialog modal-sm">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title"><i class="fas fa-exclamation-triangle text-danger me-2"></i>Cancel Appointment</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="font-size:.85rem;">
+                  Cancel appointment with <strong>{{ apt.officer.name }}</strong> on <strong>{{ apt.date.strftime('%d %b %Y') if apt.date else 'N/A' }}</strong> at <strong class="mono">{{ apt.time }}</strong>?
+                </div>
+                <div class="modal-footer gap-2">
+                  <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Keep it</button>
+                  <a href="{{ url_for('student.cancel_appointment', appointment_id=apt.id) }}" class="btn btn-danger btn-sm"><i class="fas fa-times"></i>Cancel</a>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-5" style="color:var(--text-muted);">
+              <i class="fas fa-calendar-times fa-3x mb-3 d-block" style="opacity:.25;"></i>
+              <span style="font-size:.9rem;">No appointments found.</span><br>
+              <a href="{{ url_for('student.book_calcom') }}" class="btn btn-primary btn-sm mt-3"><i class="fas fa-plus"></i>Book one now</a>
+            </td>
+          </tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% set my_waitlist = current_user.waitlist_entries %}
+{% if my_waitlist %}
+<div class="mt-5">
+  <h5 style="font-weight:800;font-size:1rem;margin-bottom:16px;">
+    <i class="fas fa-clock me-2" style="color:var(--warning);"></i>My Waitlist
+  </h5>
+  <div class="card">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th class="ps-4">Officer</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Joined</th>
+            <th class="text-end pe-4">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for w in my_waitlist %}
+        <tr>
+          <td class="ps-4 fw-bold" style="font-size:.85rem;">{{ w.appointment.officer.name }}</td>
+          <td style="font-size:.85rem;">{{ w.appointment.date.strftime('%d %b %Y') if w.appointment.date else 'N/A' }}</td>
+          <td><span class="mono" style="font-size:.82rem;font-weight:600;color:var(--brand);">{{ w.appointment.time }}</span></td>
+          <td><span style="font-size:.75rem;color:var(--text-muted);">{{ w.joined_at.strftime('%d %b %H:%M') if w.joined_at else 'N/A' }}</span></td>
+          <td class="text-end pe-4">
+            <a href="{{ url_for('student.leave_waitlist', entry_id=w.id) }}" class="btn btn-sm btn-outline-danger">Leave</a>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

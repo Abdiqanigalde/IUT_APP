@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="{{ 'dark' if current_user.is_authenticated and current_user.dark_mode else 'light' }}">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IUT APPOINTMENT — {{ title if title else "University Appointment System" }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* ── Design Tokens ─────────────────────────────────────────────────── */
+        :root {
+            --brand:        #1a56db;
+            --brand-light:  #3b82f6;
+            --brand-dark:   #1e40af;
+            --accent:       #06b6d4;
+            --success:      #10b981;
+            --warning:      #f59e0b;
+            --danger:       #ef4444;
+            --info:         #3b82f6;
+
+            /* Light mode surfaces */
+            --bg:           #f1f5f9;
+            --surface:      #ffffff;
+            --surface-2:    #f8fafc;
+            --border:       rgba(0,0,0,.07);
+            --text:         #0f172a;
+            --text-muted:   #64748b;
+            --nav-bg:       #ffffff;
+            --nav-border:   rgba(0,0,0,.06);
+
+            --radius:       14px;
+            --radius-sm:    8px;
+            --shadow-sm:    0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+            --shadow:       0 4px 16px rgba(0,0,0,.07), 0 1px 3px rgba(0,0,0,.04);
+            --shadow-lg:    0 10px 40px rgba(0,0,0,.10), 0 2px 8px rgba(0,0,0,.06);
+
+            --transition:   all .2s cubic-bezier(.4,0,.2,1);
+        }
+
+        [data-bs-theme="dark"] {
+            --bg:           #0b0f1a;
+            --surface:      #111827;
+            --surface-2:    #1a2235;
+            --border:       rgba(255,255,255,.06);
+            --text:         #f1f5f9;
+            --text-muted:   #94a3b8;
+            --nav-bg:       #111827;
+            --nav-border:   rgba(255,255,255,.05);
+            --shadow-sm:    0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
+            --shadow:       0 4px 20px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.2);
+            --shadow-lg:    0 12px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+        }
+
+        /* ── Base ──────────────────────────────────────────────────────────── */
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            transition: background .3s ease, color .3s ease;
+        }
+
+        /* ── Scrollbar ─────────────────────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--brand); border-radius: 99px; opacity: .6; }
+
+        /* ── Navbar ────────────────────────────────────────────────────────── */
+        .navbar {
+            background: var(--nav-bg) !important;
+            border-bottom: 1px solid var(--nav-border);
+            box-shadow: var(--shadow-sm);
+            padding: 0 0;
+            height: 62px;
+            transition: var(--transition);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .navbar .container { height: 100%; }
+        .navbar-brand {
+            font-weight: 800;
+            font-size: 1.05rem;
+            letter-spacing: -.3px;
+            color: var(--brand) !important;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+        .navbar-brand img {
+            height: 34px;
+            object-fit: contain;
+        }
+        .navbar-brand .brand-text {
+            display: flex;
+            flex-direction: column;
+            line-height: 1;
+        }
+        .navbar-brand .brand-name {
+            font-size: .88rem;
+            font-weight: 800;
+            color: var(--brand);
+            letter-spacing: -.2px;
+        }
+        .navbar-brand .brand-sub {
+            font-size: .62rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: .5px;
+            text-transform: uppercase;
+        }
+
+        .nav-link {
+            font-size: .82rem;
+            font-weight: 600;
+            color: var(--text-muted) !important;
+            padding: 8px 12px !important;
+            border-radius: var(--radius-sm);
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .nav-link:hover, .nav-link.active {
+            color: var(--brand) !important;
+            background: rgba(26,86,219,.08);
+        }
+        .nav-link i { font-size: .8rem; opacity: .8; }
+
+        /* Active nav highlight bar */
+        .nav-link.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px; left: 0; right: 0;
+            height: 2px;
+            background: var(--brand);
+            border-radius: 2px 2px 0 0;
+        }
+        .nav-item { position: relative; }
+
+        .navbar-toggler {
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 5px 8px;
+        }
+        .navbar-toggler:focus { box-shadow: none; }
+
+        /* ── Dropdown ──────────────────────────────────────────────────────── */
+        .dropdown-menu {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            padding: 8px;
+            margin-top: 8px !important;
+            min-width: 210px;
+        }
+        .dropdown-item {
+            font-size: .83rem;
+            font-weight: 500;
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            color: var(--text) !important;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: var(--transition);
+        }
+        .dropdown-item:hover { background: rgba(26,86,219,.08); color: var(--brand) !important; }
+        .dropdown-item.text-danger:hover { background: rgba(239,68,68,.08); color: var(--danger) !important; }
+        .dropdown-item i { width: 16px; text-align: center; opacity: .7; }
+        .dropdown-divider { border-color: var(--border); margin: 6px 0; }
+
+        /* Avatar chip in dropdown toggle */
+        .user-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 10px 5px 6px;
+            border-radius: 99px;
+            border: 1.5px solid var(--border);
+            background: var(--surface-2);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .user-chip:hover { border-color: var(--brand); background: rgba(26,86,219,.05); }
+        .user-avatar {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--brand), var(--accent));
+            display: flex; align-items: center; justify-content: center;
+            font-size: .72rem; font-weight: 700; color: #fff;
+            flex-shrink: 0;
+        }
+        .user-name { font-size: .8rem; font-weight: 600; color: var(--text); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* ── Cards ─────────────────────────────────────────────────────────── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+        .card-header {
+            background: transparent;
+            border-bottom: 1px solid var(--border);
+            padding: 16px 20px;
+            font-weight: 700;
+            font-size: .9rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .card-body { padding: 20px; }
+        .card-hover:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+
+        /* ── Stat Cards ────────────────────────────────────────────────────── */
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: var(--transition);
+            cursor: default;
+        }
+        .stat-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+        .stat-icon {
+            width: 48px; height: 48px;
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+        .stat-icon.primary   { background: rgba(26,86,219,.12);  color: var(--brand); }
+        .stat-icon.warning   { background: rgba(245,158,11,.12); color: var(--warning); }
+        .stat-icon.success   { background: rgba(16,185,129,.12); color: var(--success); }
+        .stat-icon.info      { background: rgba(6,182,212,.12);  color: var(--accent); }
+        .stat-icon.danger    { background: rgba(239,68,68,.12);  color: var(--danger); }
+        .stat-icon.secondary { background: rgba(100,116,139,.12);color: var(--text-muted); }
+        .stat-val { font-size: 1.75rem; font-weight: 800; line-height: 1; color: var(--text); }
+        .stat-label { font-size: .75rem; font-weight: 600; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
+        .stat-sub { font-size: .68rem; color: var(--text-muted); margin-top: 1px; }
+
+        /* ── Tables ────────────────────────────────────────────────────────── */
+        .table {
+            color: var(--text);
+            margin: 0;
+        }
+        .table > :not(caption) > * > * {
+            background: transparent;
+            border-color: var(--border);
+            padding: 12px 14px;
+        }
+        .table-light, .table thead { background: var(--surface-2) !important; }
+        .table-light th, .table thead th {
+            background: var(--surface-2) !important;
+            color: var(--text-muted) !important;
+            font-size: .72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .7px;
+            border-bottom: 1px solid var(--border) !important;
+            padding: 10px 14px;
+        }
+        .table-hover tbody tr:hover > * { background: rgba(26,86,219,.04) !important; }
+        [data-bs-theme="dark"] .table-light th,
+        [data-bs-theme="dark"] .table thead th {
+            background: rgba(255,255,255,.03) !important;
+        }
+        [data-bs-theme="dark"] .table-hover tbody tr:hover > * {
+            background: rgba(255,255,255,.03) !important;
+        }
+
+        /* ── Status Badges ─────────────────────────────────────────────────── */
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 99px;
+            font-size: .73rem;
+            font-weight: 700;
+            letter-spacing: .2px;
+        }
+        .badge-status::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            flex-shrink: 0;
+        }
+        .status-pending   { background: rgba(245,158,11,.12);  color: #d97706; }
+        .status-approved  { background: rgba(16,185,129,.12);  color: #059669; }
+        .status-rejected  { background: rgba(239,68,68,.12);   color: #dc2626; }
+        .status-completed { background: rgba(26,86,219,.12);   color: var(--brand); }
+
+        [data-bs-theme="dark"] .status-pending   { background: rgba(245,158,11,.15);  color: #fbbf24; }
+        [data-bs-theme="dark"] .status-approved  { background: rgba(16,185,129,.15);  color: #34d399; }
+        [data-bs-theme="dark"] .status-rejected  { background: rgba(239,68,68,.15);   color: #f87171; }
+        [data-bs-theme="dark"] .status-completed { background: rgba(59,130,246,.15);  color: #60a5fa; }
+
+        /* ── Buttons ───────────────────────────────────────────────────────── */
+        .btn {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            letter-spacing: -.1px;
+        }
+        .btn-primary {
+            background: var(--brand);
+            border-color: var(--brand);
+        }
+        .btn-primary:hover {
+            background: var(--brand-dark);
+            border-color: var(--brand-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(26,86,219,.35);
+        }
+        .btn-sm { font-size: .78rem; padding: 5px 12px; }
+        .btn-xs { font-size: .72rem; padding: 3px 9px; }
+
+        .btn-outline-primary { border-color: var(--brand); color: var(--brand); }
+        .btn-outline-primary:hover { background: var(--brand); border-color: var(--brand); transform: translateY(-1px); }
+        .btn-outline-secondary { border-color: var(--border); color: var(--text-muted); }
+        .btn-outline-secondary:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+
+        /* ── Forms ─────────────────────────────────────────────────────────── */
+        .form-control, .form-select {
+            background: var(--surface);
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: .85rem;
+            transition: var(--transition);
+            padding: 9px 12px;
+        }
+        .form-control:focus, .form-select:focus {
+            background: var(--surface);
+            border-color: var(--brand);
+            box-shadow: 0 0 0 3px rgba(26,86,219,.12);
+            color: var(--text);
+        }
+        .form-label {
+            font-size: .8rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            margin-bottom: 5px;
+        }
+        .input-group-text {
+            background: var(--surface-2);
+            border: 1.5px solid var(--border);
+            color: var(--text-muted);
+        }
+
+        /* ── Alerts ────────────────────────────────────────────────────────── */
+        .alert {
+            border: none;
+            border-radius: var(--radius);
+            font-size: .84rem;
+            font-weight: 500;
+            padding: 14px 18px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .alert-success  { background: rgba(16,185,129,.1);  color: #065f46; }
+        .alert-danger   { background: rgba(239,68,68,.1);   color: #991b1b; }
+        .alert-warning  { background: rgba(245,158,11,.1);  color: #92400e; }
+        .alert-info     { background: rgba(6,182,212,.1);   color: #155e75; }
+        [data-bs-theme="dark"] .alert-success  { color: #34d399; }
+        [data-bs-theme="dark"] .alert-danger   { color: #f87171; }
+        [data-bs-theme="dark"] .alert-warning  { color: #fbbf24; }
+        [data-bs-theme="dark"] .alert-info     { color: #38bdf8; }
+
+        /* ── Modals ────────────────────────────────────────────────────────── */
+        .modal-content {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+        }
+        .modal-header {
+            border-bottom: 1px solid var(--border);
+            padding: 18px 22px;
+        }
+        .modal-title { font-weight: 700; font-size: .95rem; }
+        .modal-footer { border-top: 1px solid var(--border); padding: 14px 22px; }
+        .btn-close { filter: none; opacity: .6; }
+        [data-bs-theme="dark"] .btn-close { filter: invert(1); }
+
+        /* ── Progress bars ─────────────────────────────────────────────────── */
+        .progress {
+            background: var(--surface-2);
+            border-radius: 99px;
+            height: 6px;
+        }
+        .progress-bar { border-radius: 99px; }
+
+        /* ── Page header ───────────────────────────────────────────────────── */
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+        .page-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--text);
+            margin: 0;
+            letter-spacing: -.4px;
+        }
+        .page-subtitle { font-size: .82rem; color: var(--text-muted); margin-top: 2px; }
+
+        /* ── Badge override ────────────────────────────────────────────────── */
+        .badge { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; border-radius: 6px; }
+        .notif-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+            position: absolute;
+            top: 4px; right: 4px;
+            border: 2px solid var(--nav-bg);
+        }
+
+        /* ── Dark mode toggle animation ────────────────────────────────────── */
+        #darkModeToggle i { transition: transform .4s ease; }
+        #darkModeToggle:hover i { transform: rotate(20deg); }
+
+        /* ── Toast ─────────────────────────────────────────────────────────── */
+        .toast {
+            border-radius: var(--radius) !important;
+            border: none !important;
+            box-shadow: var(--shadow-lg) !important;
+            font-size: .83rem;
+            font-weight: 500;
+        }
+
+        /* ── Footer ────────────────────────────────────────────────────────── */
+        footer {
+            font-size: .75rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border) !important;
+            padding: 20px 0 !important;
+            margin-top: 40px;
+        }
+
+        /* ── Utilities ─────────────────────────────────────────────────────── */
+        .text-brand { color: var(--brand) !important; }
+        .bg-surface { background: var(--surface) !important; }
+        .border-custom { border-color: var(--border) !important; }
+        .rounded-custom { border-radius: var(--radius) !important; }
+        .fw-800 { font-weight: 800 !important; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .container-page { max-width: 1280px; }
+
+        /* ── Smooth page transitions ───────────────────────────────────────── */
+        .main-content {
+            animation: fadeSlideIn .25s ease-out both;
+        }
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Dark mode transition */
+        html { transition: background .3s ease; }
+    </style>
+    {% block styles %}{% endblock %}
+</head>
+<body>
+
+<!-- ── Navbar ───────────────────────────────────────────────────────────────── -->
+<nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('index') }}">
+            <img src="{{ url_for('static', filename='iut_logo.png') }}" alt="IUT">
+            <div class="brand-text">
+                <span class="brand-name">IUT APPOINTMENT</span>
+                <span class="brand-sub">Management System</span>
+            </div>
+        </a>
+
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto align-items-center gap-1">
+                {% if current_user.is_authenticated %}
+                    {% if current_user.role == 'super_admin' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('super_admin.dashboard') }}"><i class="fas fa-shield-alt"></i>Control Panel</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="fas fa-chart-pie"></i>Admin View</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('super_admin.audit_log') }}"><i class="fas fa-history"></i>Audit Log</a></li>
+                    {% elif current_user.role == 'admin' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="fas fa-chart-pie"></i>Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_appointments') }}"><i class="fas fa-calendar-alt"></i>Appointments</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_officers') }}"><i class="fas fa-users"></i>Officers</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_students') }}"><i class="fas fa-user-graduate"></i>Students</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.audit_log') }}"><i class="fas fa-clipboard-list"></i>Audit</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_holidays') }}"><i class="fas fa-umbrella-beach"></i>Holidays</a></li>
+                    {% elif current_user.role == 'officer' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.dashboard') }}"><i class="fas fa-home"></i>Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.schedule') }}"><i class="fas fa-calendar-alt"></i>Schedule</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.scan_page') }}"><i class="fas fa-qrcode"></i>Scan QR</a></li>
+                    {% elif current_user.role == 'visa_officer' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('visa.visa_officer_dashboard') }}"><i class="fas fa-passport"></i>Visa Dashboard</a></li>
+                    {% else %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('student.dashboard') }}"><i class="fas fa-home"></i>My Appointments</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('student.book_calcom') }}" style="color:var(--brand)!important"><i class="fas fa-calendar-plus"></i>Book Now</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('student.officer_list') }}"><i class="fas fa-users"></i>Officers</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('student.visa_guide') }}"><i class="fas fa-passport"></i>Visa Guide</a></li>
+                    {% endif %}
+
+                    <!-- User dropdown -->
+                    <li class="nav-item dropdown ms-1">
+                        <a class="nav-link dropdown-toggle p-0" href="#" data-bs-toggle="dropdown" style="position:relative;">
+                            <div class="user-chip">
+                                <div class="user-avatar">{{ current_user.name[0].upper() if current_user.name else 'U' }}</div>
+                                <span class="user-name d-none d-md-block">{{ current_user.name }}</span>
+                                {% set unread = current_user.notifications | selectattr('is_read','equalto',false) | list %}
+                                {% if unread %}
+                                <span class="badge bg-danger rounded-pill" style="font-size:.6rem;padding:2px 5px;">{{ unread|length }}</span>
+                                {% endif %}
+                            </div>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <div style="padding:8px 12px 6px; border-bottom:1px solid var(--border); margin-bottom:4px;">
+                                    <div style="font-weight:700;font-size:.85rem;color:var(--text);">{{ current_user.name }}</div>
+                                    <div style="font-size:.75rem;color:var(--text-muted);text-transform:capitalize;">{{ current_user.role.replace('_',' ') }}</div>
+                                </div>
+                            </li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin.profile') if current_user.role == 'admin' else url_for('student.profile') }}"><i class="fas fa-user-cog"></i>Profile Settings</a></li>
+                            {% if current_user.role == 'student' %}
+                            <li><a class="dropdown-item" href="{{ url_for('student.export_pdf') }}"><i class="fas fa-file-pdf"></i>Export History</a></li>
+                            {% endif %}
+                            <li>
+                                <a class="dropdown-item" href="#" id="darkModeToggle">
+                                    {% if current_user.dark_mode %}
+                                    <i class="fas fa-sun"></i>Light Mode
+                                    {% else %}
+                                    <i class="fas fa-moon"></i>Dark Mode
+                                    {% endif %}
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}" style="color:var(--danger)!important"><i class="fas fa-sign-out-alt"></i>Sign Out</a></li>
+                        </ul>
+                    </li>
+                {% else %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.login') }}">Sign In</a></li>
+                    <li class="nav-item ms-1"><a class="btn btn-primary btn-sm" href="{{ url_for('auth.register') }}" style="padding:7px 14px;"><i class="fas fa-user-plus"></i>Register</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<!-- ── Main Content ──────────────────────────────────────────────────────────── -->
+<div class="container mt-4 mb-5 main-content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show mb-3" role="alert">
+                    <i class="fas fa-{% if category=='success' %}check-circle{% elif category=='danger' %}exclamation-circle{% elif category=='warning' %}exclamation-triangle{% else %}info-circle{% endif %}"></i>
+                    <span>{{ message|safe }}</span>
+                    <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" style="padding:4px;"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</div>
+
+<!-- ── Footer ────────────────────────────────────────────────────────────────── -->
+<footer class="text-center">
+    <div class="container">
+        <span>&copy; 2026 IUT University Appointment Management System</span>
+    </div>
+</footer>
+
+<!-- ── Scripts ───────────────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+{% if current_user.is_authenticated %}
+const socket = io();
+socket.on('connect', () => { socket.emit('join', { user_id: {{ current_user.id }} }); });
+socket.on('appointment_update', (data) => {
+    const colors = { Approved:'success', Rejected:'danger', Completed:'primary', Pending:'warning' };
+    const color = colors[data.status] || 'secondary';
+    const el = document.createElement('div');
+    el.className = `toast align-items-center text-white bg-${color} border-0 position-fixed bottom-0 end-0 m-3`;
+    el.setAttribute('role','alert');
+    el.style.zIndex = 9999;
+    el.innerHTML = `<div class="d-flex"><div class="toast-body"><i class="fas fa-bell me-2"></i>${data.message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+    document.body.appendChild(el);
+    new bootstrap.Toast(el, { delay:5000 }).show();
+    fetch('/api/notifications/unread-count').then(r=>r.json()).then(d=>{
+        const badge = document.getElementById('notif-badge');
+        if (badge) badge.textContent = d.count > 0 ? d.count : '';
+    });
+});
+{% endif %}
+
+const darkModeToggle = document.getElementById('darkModeToggle');
+if (darkModeToggle) {
+    darkModeToggle.addEventListener('click', e => {
+        e.preventDefault();
+        fetch('/toggle-darkmode', { method:'POST', headers:{'X-CSRFToken':'{{ csrf_token() }}','Content-Type':'application/json'} })
+        .then(r=>r.json()).then(()=>location.reload());
+    });
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

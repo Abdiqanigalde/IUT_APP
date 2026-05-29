@@ -1,0 +1,247 @@
+{% extends "layout.html" %}
+{% block content %}
+<h3 class="fw-bold mb-4">Manage Officers</h3>
+<div class="row g-4">
+
+  <!-- Add New Officer -->
+  <div class="col-md-4">
+    <div class="card p-4">
+      <h5 class="fw-bold mb-3">Add New Officer</h5>
+      <form method="POST">
+        {{ form.hidden_tag() }}
+        <div class="mb-2">
+          {{ form.name.label(class="form-label small fw-semibold") }}
+          {{ form.name(class="form-control form-control-sm") }}
+        </div>
+        <div class="mb-2">
+          {{ form.designation.label(class="form-label small fw-semibold") }}
+          {{ form.designation(class="form-control form-control-sm") }}
+        </div>
+        <div class="mb-2">
+          {{ form.handles.label(class="form-label small fw-semibold") }}
+          {{ form.handles(class="form-control form-control-sm", placeholder="e.g. transcript, certificate, academic record") }}
+          <small class="text-muted">Comma-separated keywords for AI officer matching</small>
+        </div>
+        <div class="mb-2">
+          {{ form.room.label(class="form-label small fw-semibold") }}
+          {{ form.room(class="form-control form-control-sm", placeholder="e.g. Admin Building, Room 313") }}
+        </div>
+        <hr class="my-2">
+        <p class="small text-muted mb-1"><i class="fas fa-key me-1"></i>Officer Portal Login</p>
+        <div class="mb-2">
+          {{ form.login_email.label(class="form-label small fw-semibold") }}
+          {{ form.login_email(class="form-control form-control-sm", placeholder="e.g. officer@iut-dhaka.edu") }}
+        </div>
+        <div class="mb-2">
+          {{ form.login_password.label(class="form-label small fw-semibold") }}
+          {{ form.login_password(class="form-control form-control-sm", placeholder="Min 6 characters") }}
+        </div>
+        <hr class="my-2">
+        <div class="mb-2">
+          {{ form.photo_url.label(class="form-label small fw-semibold") }}
+          {{ form.photo_url(class="form-control form-control-sm", placeholder="e.g. VC.jpg") }}
+          <small class="text-muted d-block">Filename in static/ folder (optional)</small>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">{{ form.work_start.label(class="form-label small fw-semibold") }}{{ form.work_start(class="form-control form-control-sm") }}</div>
+          <div class="col-6">{{ form.work_end.label(class="form-label small fw-semibold") }}{{ form.work_end(class="form-control form-control-sm") }}</div>
+        </div>
+        <div class="mb-2">
+          {{ form.daily_limit.label(class="form-label small fw-semibold") }}
+          {{ form.daily_limit(class="form-control form-control-sm") }}
+        </div>
+        <div class="mb-3">
+          {{ form.recurring_off_days.label(class="form-label small fw-semibold") }}
+          {{ form.recurring_off_days(class="form-select form-select-sm", size=4) }}
+          <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
+        </div>
+        <div class="d-grid">{{ form.submit(class="btn btn-primary btn-sm") }}</div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Officers Table -->
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header bg-transparent fw-bold">Officers ({{ officers|length }})</div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3">Name</th>
+              <th>Login Email</th>
+              <th>Hours</th>
+              <th>Daily Limit</th>
+              <th>Status</th>
+              <th class="text-end pe-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for officer in officers %}
+          {% set current_unavail = namespace(found=None) %}
+          {% for u in officer.unavailabilities %}
+            {% if u.start_date <= today <= u.end_date %}{% set current_unavail.found = u %}{% endif %}
+          {% endfor %}
+          <tr>
+            <td class="ps-3 fw-semibold">
+              {{ officer.name }}<br>
+              <small class="text-muted">{{ officer.designation }}</small>
+              {% if officer.room %}
+              <br><small class="text-muted" style="font-size:.75rem;">
+                <i class="fas fa-map-marker-alt me-1"></i>{{ officer.room }}
+              </small>
+              {% endif %}
+              {% if officer.handles %}
+              <br><small class="text-muted" style="font-size:.7rem;">
+                <i class="fas fa-tags me-1"></i>{{ officer.handles[:60] }}{% if officer.handles|length > 60 %}…{% endif %}
+              </small>
+              {% endif %}
+            </td>
+            <td class="small">
+              {% if officer.email %}
+                <span class="badge bg-light text-dark border">{{ officer.email }}</span>
+              {% else %}
+                <span class="text-muted fst-italic">No login</span>
+              {% endif %}
+            </td>
+            <td class="small">{{ officer.work_start }} – {{ officer.work_end }}</td>
+            <td class="small">{{ 'Unlimited' if officer.daily_limit == 0 else officer.daily_limit }}</td>
+            <td>
+              {% if current_unavail.found %}
+                <span class="badge bg-danger">Unavailable until {{ current_unavail.found.end_date.strftime('%d %b') }}</span>
+              {% else %}
+                <span class="badge bg-success">Available</span>
+              {% endif %}
+            </td>
+            <td class="text-end pe-3">
+              <div class="d-flex gap-1 justify-content-end flex-wrap">
+                <!-- Edit -->
+                <button class="btn btn-sm btn-outline-primary btn-edit-officer"
+                  title="Edit Officer"
+                  data-id="{{ officer.id }}"
+                  data-name="{{ officer.name | e }}"
+                  data-designation="{{ officer.designation | e }}"
+                  data-handles="{{ (officer.handles or '') | e }}"
+                  data-room="{{ (officer.room or '') | e }}"
+                  data-photo="{{ (officer.photo_url or '') | e }}"
+                  data-work-start="{{ officer.work_start or '08:00' }}"
+                  data-work-end="{{ officer.work_end or '17:00' }}"
+                  data-daily-limit="{{ officer.daily_limit }}"
+                  data-is-active="{{ '1' if officer.is_active else '0' }}">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <!-- Working Hours -->
+                <a href="{{ url_for('admin.manage_hours', officer_id=officer.id) }}" class="btn btn-sm btn-outline-info" title="Working Hours"><i class="fas fa-clock"></i></a>
+                <!-- Unavailability -->
+                <a href="{{ url_for('admin.manage_unavailability', officer_id=officer.id) }}" class="btn btn-sm btn-outline-warning" title="Unavailability"><i class="fas fa-calendar-times"></i></a>
+                <!-- Delete -->
+                <a href="{{ url_for('admin.delete_officer', officer_id=officer.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete officer and their login account?')"><i class="fas fa-trash"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% set no_login = [] %}
+    {% for o in officers %}{% if not o.email %}{% set _ = no_login.append(o) %}{% endif %}{% endfor %}
+    {% if no_login %}
+    <div class="alert alert-warning mt-3 small">
+      <i class="fas fa-exclamation-triangle me-1"></i>
+      <strong>{{ no_login|length }} officer(s)</strong> have no login email set and cannot log in to the portal.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Edit Officer Modal -->
+<div class="modal fade" id="editOfficerModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-edit me-2 text-primary"></i>Edit Officer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="editOfficerForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Officer Name <span class="text-danger">*</span></label>
+              <input type="text" name="edit_name" id="editName" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Designation <span class="text-danger">*</span></label>
+              <input type="text" name="edit_designation" id="editDesignation" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">
+                <i class="fas fa-robot me-1 text-primary"></i>Issues Handled
+                <span class="badge bg-primary ms-1" style="font-size:.65rem;">AI Keywords</span>
+              </label>
+              <textarea name="edit_handles" id="editHandles" class="form-control form-control-sm" rows="3"
+                placeholder="e.g. transcript, certificate, academic record, graduation, enrollment"></textarea>
+              <small class="text-muted">Comma-separated — AI uses these to match students to this officer</small>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Room / Location</label>
+              <input type="text" name="edit_room" id="editRoom" class="form-control form-control-sm" placeholder="e.g. Admin Building, Room 313">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Photo Filename</label>
+              <input type="text" name="edit_photo_url" id="editPhotoUrl" class="form-control form-control-sm" placeholder="e.g. VC.jpg">
+              <small class="text-muted">Filename in static/ folder</small>
+            </div>
+            <div class="col-12"><hr class="my-0"></div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Work Start</label>
+              <input type="time" name="edit_work_start" id="editWorkStart" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Work End</label>
+              <input type="time" name="edit_work_end" id="editWorkEnd" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Daily Limit</label>
+              <input type="number" name="edit_daily_limit" id="editDailyLimit" class="form-control form-control-sm" min="0" max="100">
+              <small class="text-muted">0 = unlimited</small>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Status</label>
+              <select name="edit_is_active" id="editIsActive" class="form-select form-select-sm">
+                <option value="1">Active</option>
+                <option value="0">Inactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-save me-1"></i>Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.btn-edit-officer').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var d = this.dataset;
+    document.getElementById('editName').value        = d.name;
+    document.getElementById('editDesignation').value = d.designation;
+    document.getElementById('editHandles').value     = d.handles;
+    document.getElementById('editRoom').value        = d.room;
+    document.getElementById('editPhotoUrl').value    = d.photo;
+    document.getElementById('editWorkStart').value   = d.workStart;
+    document.getElementById('editWorkEnd').value     = d.workEnd;
+    document.getElementById('editDailyLimit').value  = d.dailyLimit;
+    document.getElementById('editIsActive').value    = d.isActive;
+    document.getElementById('editOfficerForm').action = '/admin/officers/' + d.id + '/edit';
+    new bootstrap.Modal(document.getElementById('editOfficerModal')).show();
+  });
+});
+</script>
+{% endblock %}

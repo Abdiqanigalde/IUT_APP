@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-center align-items-center" style="min-height:60vh;">
+  <div class="text-center" style="max-width:420px;">
+    <div style="font-size:5rem;font-weight:800;color:var(--border);line-height:1;margin-bottom:8px;">500</div>
+    <div style="width:64px;height:64px;border-radius:16px;background:rgba(239,68,68,.1);color:var(--danger);display:flex;align-items:center;justify-content:center;font-size:1.75rem;margin:0 auto 20px;">
+      <i class="fas fa-triangle-exclamation"></i>
+    </div>
+    <h2 style="font-size:1.4rem;font-weight:800;margin-bottom:10px;color:var(--text);">Server Error</h2>
+    <p style="color:var(--text-muted);font-size:.88rem;line-height:1.6;margin-bottom:28px;">Something went wrong on our end. We're working to fix it.</p>
+    <a href="{{ url_for('index') }}" class="btn btn-primary"><i class="fas fa-home"></i>Back to Home</a>
+  </div>
+</div>
+{% endblock %}
