@@ -1,0 +1,156 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .vo-header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    border-radius: 16px;
+    padding: 32px 36px;
+    color: white;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .vo-header::before {
+    content: '🛂';
+    position: absolute; right: 32px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 5rem; opacity: 0.15;
+  }
+  .vo-header h2 { font-weight: 800; font-size: 1.7rem; margin-bottom: 4px; }
+  .vo-header p  { opacity: .8; margin: 0; font-size: .95rem; }
+
+  .stat-card {
+    border: none; border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.07);
+    padding: 20px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .stat-icon {
+    width: 52px; height: 52px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; flex-shrink: 0;
+  }
+  .stat-card .stat-num  { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+  .stat-card .stat-lbl  { font-size: .8rem; color: #6b7280; margin-top: 2px; }
+
+  .app-table th { background: #1e3a5f; color: white; font-size: .85rem; padding: 12px 16px; }
+  .app-table td { padding: 12px 16px; font-size: .88rem; vertical-align: middle; }
+  .app-table tbody tr:hover { background: #f0f7ff; }
+
+  .badge-pending  { background: #fef3c7; color: #92400e; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
+  .badge-approved { background: #d1fae5; color: #065f46; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
+  .badge-rejected { background: #fee2e2; color: #991b1b; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
+
+  .search-bar input {
+    border-radius: 10px; border: 1px solid #d1d5db;
+    padding: 9px 16px; font-size: .9rem; width: 280px;
+  }
+  .search-bar input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+</style>
+
+<!-- Header -->
+<div class="vo-header">
+  <h2><i class="fas fa-passport me-2"></i>Visa Officer Dashboard</h2>
+  <p>Review and manage student visa document submissions.</p>
+</div>
+
+<!-- Stats -->
+{% set total    = applications|length %}
+{% set pending  = applications|selectattr('status','equalto','Pending')|list|length %}
+{% set approved = applications|selectattr('status','equalto','Approved')|list|length %}
+{% set rejected = applications|selectattr('status','equalto','Rejected')|list|length %}
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-white">
+      <div class="stat-icon" style="background:#eff6ff;"><i class="fas fa-inbox" style="color:#2563eb;"></i></div>
+      <div><div class="stat-num text-primary">{{ total }}</div><div class="stat-lbl">Total</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-white">
+      <div class="stat-icon" style="background:#fffbeb;"><i class="fas fa-clock" style="color:#f59e0b;"></i></div>
+      <div><div class="stat-num" style="color:#f59e0b;">{{ pending }}</div><div class="stat-lbl">Pending</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-white">
+      <div class="stat-icon" style="background:#f0fdf4;"><i class="fas fa-check-circle" style="color:#22c55e;"></i></div>
+      <div><div class="stat-num text-success">{{ approved }}</div><div class="stat-lbl">Approved</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-white">
+      <div class="stat-icon" style="background:#fef2f2;"><i class="fas fa-times-circle" style="color:#ef4444;"></i></div>
+      <div><div class="stat-num text-danger">{{ rejected }}</div><div class="stat-lbl">Rejected</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-3 px-4">
+    <span class="fw-semibold">All Applications</span>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="🔍  Search by name or ID…" onkeyup="filterTable()">
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table app-table mb-0" id="appTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Student Name</th>
+          <th>Student ID</th>
+          <th>Department</th>
+          <th>Submitted</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for app in applications %}
+        <tr>
+          <td class="text-muted">{{ loop.index }}</td>
+          <td class="fw-semibold">{{ app.student_name }}</td>
+          <td>{{ app.student_id_num }}</td>
+          <td>{{ app.department }}</td>
+          <td class="text-muted">{{ app.created_at.strftime('%d %b %Y') }}</td>
+          <td>
+            {% if app.status == 'Pending' %}
+              <span class="badge-pending">⏳ Pending</span>
+            {% elif app.status == 'Approved' %}
+              <span class="badge-approved">✅ Approved</span>
+            {% elif app.status == 'Rejected' %}
+              <span class="badge-rejected">❌ Rejected</span>
+            {% endif %}
+          </td>
+<td>
+  <a href="{{ url_for('visa.visa_application_detail', app_id=app.id) }}"
+     class="btn btn-sm btn-outline-primary">
+    <i class="fas fa-eye me-1"></i>Review
+  </a>
+  <form action="{{ url_for('visa.visa_delete_application', app_id=app.id) }}" method="POST" class="d-inline"
+        onsubmit="return confirm('Delete this application?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-sm btn-outline-danger ms-1">
+      <i class="fas fa-trash"></i>
+    </button>
+  </form>
+</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function filterTable() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  document.querySelectorAll('#appTable tbody tr').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,409 @@
+{% extends "layout.html" %}
+{% block content %}
+
+{# ══════════════════════════════════════════════════════
+   REUSABLE MODALS & ACTION DROPDOWN
+   (same macro set as dashboard — keep in sync)
+══════════════════════════════════════════════════════ #}
+
+{% macro reschedule_modal(apt, prefix) %}
+<div class="modal fade" id="reschedule{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title"><i class="fas fa-clock me-2"></i>Reschedule Booking</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.reschedule', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">New Date</label>
+          <input type="date" name="new_date" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">New Time</label>
+          <input type="time" name="new_time" class="form-control" value="{{ apt.time }}" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Reason (optional)</label>
+          <textarea name="reason" class="form-control" rows="2" placeholder="Why is this being rescheduled?"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm"><i class="fas fa-save me-1"></i>Save Reschedule</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro req_reschedule_modal(apt, prefix) %}
+<div class="modal fade" id="reqreschedule{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title"><i class="fas fa-paper-plane me-2"></i>Request Reschedule</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.request_reschedule', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="text-muted small">The student will be notified and asked to choose a new time slot.</p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Message to student</label>
+          <textarea name="message" class="form-control" rows="3" placeholder="Explain why a reschedule is needed..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-info text-white btn-sm"><i class="fas fa-paper-plane me-1"></i>Send Request</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro location_modal(apt, prefix) %}
+<div class="modal fade" id="location{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title"><i class="fas fa-map-marker-alt me-2"></i>Edit Location</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.edit_location', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Location / Room</label>
+          <input type="text" name="location" class="form-control"
+                 value="{{ apt.location if apt.location else '' }}"
+                 placeholder="e.g. Committee Room, VC Office...">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Meeting Link (optional)</label>
+          <input type="url" name="meeting_link" class="form-control"
+                 value="{{ apt.meeting_link if apt.meeting_link else '' }}"
+                 placeholder="https://meet.google.com/...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm"><i class="fas fa-save me-1"></i>Update Location</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro guests_modal(apt, prefix) %}
+<div class="modal fade" id="guests{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title"><i class="fas fa-user-plus me-2"></i>Add Guests</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.add_guests', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Email addresses</label>
+          <input type="text" name="guests" class="form-control"
+                 placeholder="guest1@iut-dhaka.edu, guest2@iut-dhaka.edu">
+          <div class="form-text">Separate multiple emails with commas.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Note to guests (optional)</label>
+          <textarea name="guest_note" class="form-control" rows="2"
+                    placeholder="You are invited to attend..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm"><i class="fas fa-user-plus me-1"></i>Add Guests</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro noshow_modal(apt, prefix) %}
+<div class="modal fade" id="noshow{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog modal-sm"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title"><i class="fas fa-user-slash me-2"></i>Mark as No-Show</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.mark_noshow', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="text-muted small">The student will be notified and the slot will be freed.</p>
+        <textarea name="note" class="form-control" rows="2" placeholder="Notes (optional)"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning btn-sm"><i class="fas fa-user-slash me-1"></i>Mark No-Show</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro report_modal(apt, prefix) %}
+<div class="modal fade" id="report{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title text-danger"><i class="fas fa-flag me-2"></i>Report Booking</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.report_booking', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Reason</label>
+          <select name="report_reason" class="form-select">
+            <option>Spam or fake request</option>
+            <option>Inappropriate content</option>
+            <option>Policy violation</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Details</label>
+          <textarea name="report_details" class="form-control" rows="3"
+                    placeholder="Describe the issue..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm"><i class="fas fa-flag me-1"></i>Submit Report</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro cancel_modal(apt, prefix) %}
+<div class="modal fade" id="cancel{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog modal-sm"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title text-danger"><i class="fas fa-times-circle me-2"></i>Cancel Event</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.cancel_appointment', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="text-danger small fw-semibold">
+          This will permanently cancel the appointment and notify the student.
+        </p>
+        <textarea name="cancel_reason" class="form-control" rows="2"
+                  placeholder="Cancellation reason (optional)"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Keep</button>
+        <button class="btn btn-danger btn-sm"><i class="fas fa-times-circle me-1"></i>Cancel Event</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro reject_modal(apt, prefix) %}
+<div class="modal fade" id="reject{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog modal-sm"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title">Reject Appointment</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.reject', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <textarea name="note" class="form-control" rows="2"
+                  placeholder="Reason for rejection (optional)"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm">Confirm Reject</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
+{% macro action_dropdown(apt, prefix) %}
+<div class="d-flex align-items-center gap-1">
+
+  {# Quick approve/reject for pending #}
+  {% if apt.status == 'Pending' %}
+  <a href="{{ url_for('officer.approve', apt_id=apt.id) }}"
+     class="btn btn-sm btn-success" title="Confirm">
+    <i class="fas fa-check"></i>
+  </a>
+  <button class="btn btn-sm btn-danger"
+          data-bs-toggle="modal"
+          data-bs-target="#reject{{ prefix }}{{ apt.id }}"
+          title="Reject">
+    <i class="fas fa-times"></i>
+  </button>
+  {% endif %}
+
+  {# More options dropdown #}
+  <div class="dropdown">
+    <button class="btn btn-sm btn-outline-secondary dropdown-toggle-no-caret"
+            data-bs-toggle="dropdown" aria-expanded="false"
+            style="padding:0.25rem 0.5rem;" title="More options">
+      <i class="fas fa-ellipsis-v"></i>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:210px;font-size:0.85rem;">
+
+      {% if apt.status == 'Pending' %}
+      <li><span class="dropdown-header text-uppercase" style="font-size:0.7rem;letter-spacing:.05em;">Booking Response</span></li>
+      <li>
+        <a class="dropdown-item text-success" href="{{ url_for('officer.approve', apt_id=apt.id) }}">
+          <i class="fas fa-check me-2"></i>Confirm
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item text-danger" href="#"
+           data-bs-toggle="modal" data-bs-target="#reject{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-ban me-2"></i>Reject
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}
+
+      <li><span class="dropdown-header text-uppercase" style="font-size:0.7rem;letter-spacing:.05em;">Edit Event</span></li>
+      <li>
+        <a class="dropdown-item" href="#"
+           data-bs-toggle="modal" data-bs-target="#reschedule{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-clock me-2 text-muted"></i>Reschedule booking
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item" href="#"
+           data-bs-toggle="modal" data-bs-target="#reqreschedule{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-paper-plane me-2 text-muted"></i>Request reschedule
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item" href="#"
+           data-bs-toggle="modal" data-bs-target="#location{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-map-marker-alt me-2 text-muted"></i>Edit location
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item" href="#"
+           data-bs-toggle="modal" data-bs-target="#guests{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-user-plus me-2 text-muted"></i>Add guests
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
+
+      <li><span class="dropdown-header text-uppercase" style="font-size:0.7rem;letter-spacing:.05em;">After Event</span></li>
+      <li>
+        <a class="dropdown-item disabled" href="#" tabindex="-1">
+          <i class="fas fa-video me-2"></i>View recordings
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item disabled" href="#" tabindex="-1">
+          <i class="fas fa-info-circle me-2"></i>View session details
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item" href="#"
+           data-bs-toggle="modal" data-bs-target="#noshow{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-user-slash me-2 text-muted"></i>Mark as no-show
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
+
+      <li>
+        <a class="dropdown-item text-danger" href="#"
+           data-bs-toggle="modal" data-bs-target="#report{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-flag me-2"></i>Report booking
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item text-danger" href="#"
+           data-bs-toggle="modal" data-bs-target="#cancel{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-times-circle me-2"></i>Cancel event
+        </a>
+      </li>
+    </ul>
+  </div>
+</div>
+
+{# All modals for this appointment #}
+{{ reject_modal(apt, prefix) }}
+{{ reschedule_modal(apt, prefix) }}
+{{ req_reschedule_modal(apt, prefix) }}
+{{ location_modal(apt, prefix) }}
+{{ guests_modal(apt, prefix) }}
+{{ noshow_modal(apt, prefix) }}
+{{ report_modal(apt, prefix) }}
+{{ cancel_modal(apt, prefix) }}
+{% endmacro %}
+
+
+{# ═══════════════════════════════════════════════════════
+   PAGE BODY
+═══════════════════════════════════════════════════════ #}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4><i class="fas fa-calendar-alt me-2 text-info"></i>My Upcoming Schedule</h4>
+  <a href="{{ url_for('officer.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Dashboard</a>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    {% if appointments %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Student</th>
+            <th>ID</th>
+            <th>Dept</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for apt in appointments %}
+          <tr>
+            <td class="text-nowrap">{{ apt.date.strftime('%a %d %b') }}</td>
+            <td class="text-nowrap">{{ apt.time }}</td>
+            <td>{{ apt.student_name }}</td>
+            <td><small class="text-muted">{{ apt.student_id_num }}</small></td>
+            <td><small>{{ apt.department }}</small></td>
+            <td>
+              <small>{{ apt.issue[:50] }}{% if apt.issue|length > 50 %}…{% endif %}</small>
+            </td>
+            <td>
+              <span class="badge badge-status status-{{ apt.status|lower }}">{{ apt.status }}</span>
+            </td>
+            <td class="text-nowrap">
+              {{ action_dropdown(apt, 'S') }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="fas fa-calendar-check fa-2x mb-2"></i>
+      <p>No upcoming appointments.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.dropdown-toggle-no-caret::after { display: none; }
+</style>
+
+{% endblock %}

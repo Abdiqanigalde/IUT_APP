@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block title %}Leave Feedback{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Leave Feedback for Your Appointment</h4>
+                </div>
+                <div class="card-body">
+                    {% if appointment %}
+                    <div class="alert alert-info">
+                        <strong>Appointment Details:</strong><br>
+                        Officer: {{ appointment.officer.name }}<br>
+                        Date: {{ appointment.date }}<br>
+                        Time: {{ appointment.time }}
+                    </div>
+
+                    <form method="POST" action="/student/feedback/submit">
+                        <input type="hidden" name="appointment_id" value="{{ appointment.id }}">
+
+                        <!-- Rating -->
+                        <div class="mb-4">
+                            <label class="form-label">How would you rate your experience?</label>
+                            <div class="rating-stars">
+                                <div class="star-rating">
+                                    <input type="radio" name="rating" value="5" id="star5">
+                                    <label for="star5">★</label>
+                                    <input type="radio" name="rating" value="4" id="star4">
+                                    <label for="star4">★</label>
+                                    <input type="radio" name="rating" value="3" id="star3">
+                                    <label for="star3">★</label>
+                                    <input type="radio" name="rating" value="2" id="star2">
+                                    <label for="star2">★</label>
+                                    <input type="radio" name="rating" value="1" id="star1">
+                                    <label for="star1">★</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Comments -->
+                        <div class="mb-4">
+                            <label for="comments" class="form-label">Additional Comments (Optional)</label>
+                            <textarea class="form-control" id="comments" name="comments" rows="5" placeholder="Share your feedback..."></textarea>
+                            <small class="form-text text-muted">Please be constructive and respectful in your feedback.</small>
+                        </div>
+
+                        <!-- Buttons -->
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">Submit Feedback</button>
+                            <a href="/student/dashboard" class="btn btn-secondary">Cancel</a>
+                        </div>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        Appointment not found. Please try again.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .star-rating {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: flex-end;
+        gap: 10px;
+        font-size: 2rem;
+    }
+
+    .star-rating input {
+        display: none;
+    }
+
+    .star-rating label {
+        cursor: pointer;
+        color: #ddd;
+        transition: color 0.2s;
+    }
+
+    .star-rating input:checked ~ label,
+    .star-rating label:hover,
+    .star-rating label:hover ~ label {
+        color: #ffc107;
+    }
+
+    body.dark-mode .star-rating label {
+        color: #555;
+    }
+
+    body.dark-mode .star-rating input:checked ~ label,
+    body.dark-mode .star-rating label:hover,
+    body.dark-mode .star-rating label:hover ~ label {
+        color: #ffc107;
+    }
+</style>
+{% endblock %}
