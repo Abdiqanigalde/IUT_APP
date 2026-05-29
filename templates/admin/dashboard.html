@@ -1,0 +1,249 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Admin Dashboard</h1>
+    <div class="page-subtitle">Overview for {{ year }}</div>
+  </div>
+  <a href="{{ url_for('admin.export_csv') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-download"></i>Export CSV
+  </a>
+</div>
+
+<!-- ── Stat Cards ──────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  {% for icon, cls, val, label, sub in [
+    ('fa-calendar-check','primary',  total,           'Total Appointments', none),
+    ('fa-clock',         'warning',  pending,         'Pending',            none),
+    ('fa-user-check',    'success',  approved,        'Approved',           none),
+    ('fa-check-double',  'info',     completed,       'Completed',          none),
+    ('fa-times-circle',  'danger',   rejected,        'Rejected',           none),
+    ('fa-user-graduate', 'secondary',total_students,  'Students',           active_students|string + ' active')] %}
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-card">
+      <div class="stat-icon {{ cls }}"><i class="fas {{ icon }}"></i></div>
+      <div>
+        <div class="stat-val">{{ val }}</div>
+        <div class="stat-label">{{ label }}</div>
+        {% if sub %}<div class="stat-sub">{{ sub }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── Charts Row 1 ────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-8">
+    <div class="card h-100">
+      <div class="card-header">
+        <span><i class="fas fa-chart-bar me-2 text-brand"></i>Appointment Trends</span>
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-primary btn-sm active" id="btnWeekly">7 Days</button>
+          <button class="btn btn-outline-primary btn-sm" id="btnMonthly">Monthly {{ year }}</button>
+        </div>
+      </div>
+      <div class="card-body"><canvas id="trendChart" height="110"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <span><i class="fas fa-circle-half-stroke me-2 text-brand"></i>Status Breakdown</span>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="statusChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Charts Row 2 ────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header"><span><i class="fas fa-users me-2 text-brand"></i>By Officer</span></div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="officerChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header"><span><i class="fas fa-table me-2 text-brand"></i>Officer Performance</span></div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th class="ps-4">Officer</th>
+              <th class="text-center">Total</th>
+              <th class="text-center">Approved</th>
+              <th class="text-center">Completed</th>
+              <th class="text-center">Rejected</th>
+              <th>Completion %</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for o in officer_stats %}
+          <tr>
+            <td class="ps-4 fw-600">{{ o.name }}</td>
+            <td class="text-center fw-bold">{{ o.total }}</td>
+            <td class="text-center" style="color:var(--success);font-weight:700;">{{ o.approved }}</td>
+            <td class="text-center" style="color:var(--brand);font-weight:700;">{{ o.completed }}</td>
+            <td class="text-center" style="color:var(--danger);font-weight:700;">{{ o.rejected }}</td>
+            <td>
+              {% if o.total > 0 %}
+                {% set rate = ((o.completed / o.total) * 100)|round|int %}
+                <div class="d-flex align-items-center gap-2">
+                  <div class="progress flex-fill" style="height:5px;">
+                    <div class="progress-bar bg-primary" style="width:{{ rate }}%"></div>
+                  </div>
+                  <span style="font-size:.75rem;font-weight:700;min-width:32px;color:var(--text-muted);">{{ rate }}%</span>
+                </div>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No officer data yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Today's Schedule ────────────────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-header">
+    <span><i class="fas fa-calendar-day me-2 text-brand"></i>Today's Schedule</span>
+    <span class="badge bg-primary" style="border-radius:99px;">{{ today_schedule|length }} appointment{{ 's' if today_schedule|length != 1 }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th class="ps-4">Time</th>
+            <th>Officer</th>
+            <th>Student</th>
+            <th>Department</th>
+            <th>Status</th>
+            <th class="text-end pe-4">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% if today_schedule %}
+          {% for apt in today_schedule %}
+          <tr>
+            <td class="ps-4"><span class="mono fw-bold" style="font-size:.82rem;color:var(--brand);">{{ apt.time }}</span></td>
+            <td class="fw-600">{{ apt.officer.name }}</td>
+            <td>
+              <span class="fw-600">{{ apt.student_name }}</span><br>
+              <span style="font-size:.72rem;color:var(--text-muted);">{{ apt.student_id_num }}</span>
+            </td>
+            <td><span style="font-size:.78rem;color:var(--text-muted);">{{ apt.department }}</span></td>
+            <td><span class="badge-status status-{{ apt.status.lower() }}">{{ apt.status }}</span></td>
+            <td class="text-end pe-4">
+              {% if apt.status == 'Approved' %}
+                <a href="{{ url_for('admin.update_status', appointment_id=apt.id, status='Completed') }}" class="btn btn-sm btn-outline-success"><i class="fas fa-check"></i>Complete</a>
+              {% elif apt.status == 'Pending' %}
+                <a href="{{ url_for('admin.update_status', appointment_id=apt.id, status='Approved') }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-thumbs-up"></i>Approve</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-5" style="color:var(--text-muted);">
+              <i class="fas fa-calendar-check fa-2x mb-2 d-block" style="opacity:.3;"></i>
+              No appointments scheduled for today.
+            </td>
+          </tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+const gridColor  = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+const labelColor = isDark ? '#94a3b8' : '#64748b';
+
+const weeklyLabels  = {{ weekly|map(attribute='date')|list|tojson }};
+const weeklyCounts  = {{ weekly|map(attribute='count')|list|tojson }};
+const monthlyLabels = {{ months_data|map(attribute='label')|list|tojson }};
+const monthlyCounts = {{ months_data|map(attribute='count')|list|tojson }};
+
+const trendChart = new Chart(document.getElementById('trendChart'), {
+  type: 'bar',
+  data: {
+    labels: weeklyLabels,
+    datasets: [{
+      label: 'Appointments',
+      data: weeklyCounts,
+      backgroundColor: 'rgba(26,86,219,.7)',
+      borderRadius: 8,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero:true, ticks:{ stepSize:1, color:labelColor }, grid:{ color:gridColor } },
+      x: { ticks:{ color:labelColor }, grid:{ color:'transparent' } }
+    }
+  }
+});
+
+document.getElementById('btnWeekly').addEventListener('click', function () {
+  trendChart.data.labels = weeklyLabels;
+  trendChart.data.datasets[0].data = weeklyCounts;
+  trendChart.data.datasets[0].backgroundColor = 'rgba(26,86,219,.7)';
+  trendChart.update();
+  this.className = 'btn btn-primary btn-sm active';
+  document.getElementById('btnMonthly').className = 'btn btn-outline-primary btn-sm';
+});
+document.getElementById('btnMonthly').addEventListener('click', function () {
+  trendChart.data.labels = monthlyLabels;
+  trendChart.data.datasets[0].data = monthlyCounts;
+  trendChart.data.datasets[0].backgroundColor = 'rgba(6,182,212,.7)';
+  trendChart.update();
+  this.className = 'btn btn-primary btn-sm active';
+  document.getElementById('btnWeekly').className = 'btn btn-outline-primary btn-sm';
+});
+
+new Chart(document.getElementById('statusChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Pending','Approved','Completed','Rejected'],
+    datasets: [{
+      data: [{{ status_counts.Pending }},{{ status_counts.Approved }},{{ status_counts.Completed }},{{ status_counts.Rejected }}],
+      backgroundColor: ['#f59e0b','#10b981','#1a56db','#ef4444'],
+      borderWidth: 0, hoverOffset: 6
+    }]
+  },
+  options: { plugins: { legend: { position:'bottom', labels:{ font:{ size:11 }, color:labelColor, padding:12 } } }, cutout:'65%' }
+});
+
+new Chart(document.getElementById('officerChart'), {
+  type: 'doughnut',
+  data: {
+    labels: {{ officers|tojson }},
+    datasets: [{
+      data: {{ officer_counts|tojson }},
+      backgroundColor: ['#1a56db','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899'],
+      borderWidth: 0, hoverOffset: 6
+    }]
+  },
+  options: { plugins: { legend: { position:'bottom', labels:{ font:{ size:11 }, color:labelColor, padding:12 } } }, cutout:'65%' }
+});
+</script>
+{% endblock %}

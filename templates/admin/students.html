@@ -1,0 +1,105 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Students</h1>
+    <div class="page-subtitle">Manage registered student accounts</div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label">Search</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text"><i class="fas fa-search" style="font-size:.7rem;"></i></span>
+          <input type="text" name="search" class="form-control" placeholder="Name, email, or student ID…" value="{{ search }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Department</label>
+        <select name="department" class="form-select form-select-sm">
+          <option value="">All Departments</option>
+          {% for d in departments %}
+          <option {{ 'selected' if dept == d }}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All</option>
+          <option value="active"   {{ 'selected' if status_filter == 'active' }}>Active</option>
+          <option value="inactive" {{ 'selected' if status_filter == 'inactive' }}>Inactive</option>
+        </select>
+      </div>
+      <div class="col-auto d-flex gap-1">
+        <button class="btn btn-primary btn-sm"><i class="fas fa-search"></i>Filter</button>
+        <a href="{{ url_for('admin.manage_students') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th class="ps-4">Student</th>
+            <th>Student ID</th>
+            <th>Department</th>
+            <th>Appointments</th>
+            <th>Status</th>
+            <th class="text-end pe-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in students %}
+        <tr>
+          <td class="ps-4">
+            <div class="d-flex align-items-center gap-2">
+              <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--accent));display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:#fff;flex-shrink:0;">{{ s.name[0].upper() if s.name else '?' }}</div>
+              <div>
+                <div class="fw-bold" style="font-size:.85rem;">{{ s.name }}</div>
+                <div style="font-size:.72rem;color:var(--text-muted);">{{ s.email }}</div>
+              </div>
+            </div>
+          </td>
+          <td class="mono" style="font-size:.82rem;">{{ s.student_id }}</td>
+          <td style="font-size:.82rem;color:var(--text-muted);">{{ s.department or '—' }}</td>
+          <td>
+            <span class="badge" style="background:rgba(26,86,219,.1);color:var(--brand);font-size:.75rem;padding:4px 8px;">{{ s.appointments|length }}</span>
+          </td>
+          <td>
+            {% if s.is_active %}
+            <span class="badge-status status-approved">Active</span>
+            {% else %}
+            <span class="badge-status status-rejected">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="text-end pe-4">
+            <div class="d-flex gap-1 justify-content-end">
+              <a href="{{ url_for('admin.student_detail', user_id=s.id) }}" class="btn btn-sm btn-outline-primary" title="View details"><i class="fas fa-eye"></i>View</a>
+              <a href="{{ url_for('admin.toggle_student', user_id=s.id) }}"
+                 class="btn btn-sm {{ 'btn-outline-danger' if s.is_active else 'btn-outline-success' }}"
+                 title="{{ 'Deactivate' if s.is_active else 'Activate' }}">
+                <i class="fas fa-{{ 'ban' if s.is_active else 'check' }}"></i>
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center py-5" style="color:var(--text-muted);">
+          <i class="fas fa-users fa-2x mb-2 d-block" style="opacity:.25;"></i>No students found.
+        </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

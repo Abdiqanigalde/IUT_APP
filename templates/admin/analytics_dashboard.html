@@ -1,0 +1,224 @@
+{% extends "layout.html" %}
+
+{% block title %}Analytics Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h1 class="mb-4">Analytics Dashboard</h1>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Total Appointments</h5>
+                    <h2 class="text-primary">{{ summary.total_appointments }}</h2>
+                    <small class="text-muted">All time</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Completed</h5>
+                    <h2 class="text-success">{{ summary.completed_appointments }}</h2>
+                    <small class="text-muted">{{ (summary.completed_appointments / summary.total_appointments * 100)|round(1) }}% of total</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Cancelled</h5>
+                    <h2 class="text-danger">{{ summary.cancelled_appointments }}</h2>
+                    <small class="text-muted">{{ summary.cancellation_rate }}% cancellation rate</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Active Users</h5>
+                    <h2 class="text-info">{{ summary.total_students }}</h2>
+                    <small class="text-muted">{{ summary.total_officers }} officers</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Appointment Status Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Priority Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="priorityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Peak Booking Hours</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="hoursChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Busiest Officers</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Officer</th>
+                                    <th>Appointments</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for officer, count in summary.busiest_officers %}
+                                <tr>
+                                    <td>{{ officer.name }}</td>
+                                    <td><span class="badge bg-primary">{{ count }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Section -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Export Reports</h5>
+                </div>
+                <div class="card-body">
+                    <a href="/admin/export/pdf" class="btn btn-danger">
+                        <i class="fas fa-file-pdf"></i> Export as PDF
+                    </a>
+                    <a href="/admin/export/csv" class="btn btn-success">
+                        <i class="fas fa-file-csv"></i> Export as CSV
+                    </a>
+                    <a href="/admin/export/monthly" class="btn btn-warning">
+                        <i class="fas fa-calendar"></i> Monthly Summary
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js Library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+
+<script>
+    // Status Chart
+    const statusCtx = document.getElementById('statusChart').getContext('2d');
+    new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ status_labels|tojson }},
+            datasets: [{
+                data: {{ status_data|tojson }},
+                backgroundColor: [
+                    '#0056b3',
+                    '#28a745',
+                    '#dc3545',
+                    '#ffc107',
+                    '#17a2b8'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // Priority Chart
+    const priorityCtx = document.getElementById('priorityChart').getContext('2d');
+    new Chart(priorityCtx, {
+        type: 'bar',
+        data: {
+            labels: {{ priority_labels|tojson }},
+            datasets: [{
+                label: 'Count',
+                data: {{ priority_data|tojson }},
+                backgroundColor: [
+                    '#dc3545',
+                    '#ffc107',
+                    '#0056b3',
+                    '#6c757d'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // Hours Chart
+    const hoursCtx = document.getElementById('hoursChart').getContext('2d');
+    new Chart(hoursCtx, {
+        type: 'line',
+        data: {
+            labels: {{ hours_labels|tojson }},
+            datasets: [{
+                label: 'Appointments',
+                data: {{ hours_data|tojson }},
+                borderColor: '#0056b3',
+                backgroundColor: 'rgba(0, 86, 179, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}
