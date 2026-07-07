@@ -1,0 +1,30 @@
+name: Backup Render PostgreSQL
+ 
+on:
+  schedule:
+    # Runs every day at 03:00 UTC (~09:00 Dhaka time). Adjust as you like.
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}   # lets you trigger a backup manually from the Actions tab
+ 
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+ 
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.RENDER_EXTERNAL_DATABASE_URL }}
+        run: |
+          mkdir -p backups
+          timestamp=$(date +"%Y%m%d_%H%M%S")
+          pg_dump "$DATABASE_URL" > "backups/backup_${timestamp}.sql"
+          echo "BACKUP_FILE=backups/backup_${timestamp}.sql" >> "$GITHUB_ENV"
+ 
+      - name: Upload backup as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 30
