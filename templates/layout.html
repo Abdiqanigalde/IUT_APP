@@ -634,19 +634,21 @@ document.addEventListener('show.bs.dropdown', function (event) {
 });
 
 document.addEventListener('hidden.bs.dropdown', function (event) {
-  var toggleEl = event.target;
-  var menuEl = document.body.querySelector('.dropdown-menu[data-moved-to-body="1"]');
-  // Narrow down to the one belonging to this toggle, if multiple are open across the page.
-  document.querySelectorAll('.dropdown-menu[data-moved-to-body="1"]').forEach(function (m) {
-    if (m._origParent && !m.classList.contains('show')) {
-      if (m._origNextSibling) {
-        m._origParent.insertBefore(m, m._origNextSibling);
-      } else {
-        m._origParent.appendChild(m);
+  // Defer the move-back to the next tick. Moving a DOM node while a click
+  // inside it (e.g. clicking "Logout") is still being processed can cancel
+  // that click's default action (the link navigation) on some browsers.
+  setTimeout(function () {
+    document.querySelectorAll('.dropdown-menu[data-moved-to-body="1"]').forEach(function (m) {
+      if (m._origParent && !m.classList.contains('show')) {
+        if (m._origNextSibling) {
+          m._origParent.insertBefore(m, m._origNextSibling);
+        } else {
+          m._origParent.appendChild(m);
+        }
+        delete m.dataset.movedToBody;
       }
-      delete m.dataset.movedToBody;
-    }
-  });
+    });
+  }, 0);
 });
 </script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
