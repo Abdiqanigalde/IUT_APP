@@ -250,6 +250,13 @@ document.querySelectorAll('.btn-edit-officer').forEach(function(btn) {
     document.getElementById('editOfficerForm').action = '/admin/officers/' + d.id + '/edit';
 
     var modalEl = document.getElementById('editOfficerModal');
+    // Move the modal to be a direct child of <body>. This is required because
+    // .main-content has a CSS animation (fadeSlideIn) which creates its own
+    // stacking context — that traps the modal's z-index below the Bootstrap
+    // backdrop (which is appended to <body>), making the modal unclickable.
+    if (modalEl.parentElement !== document.body) {
+      document.body.appendChild(modalEl);
+    }
     var instance = bootstrap.Modal.getOrCreateInstance(modalEl);
     instance.show();
   });
