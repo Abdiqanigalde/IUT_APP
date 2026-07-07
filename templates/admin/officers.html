@@ -229,6 +229,14 @@
 <script>
 document.querySelectorAll('.btn-edit-officer').forEach(function(btn) {
   btn.addEventListener('click', function() {
+    // Safety: remove any orphaned backdrops / leftover modal-open state
+    // from a previous modal that didn't close cleanly. This is what causes
+    // the popup to appear but be unclickable.
+    document.querySelectorAll('.modal-backdrop').forEach(function(el) { el.remove(); });
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+
     var d = this.dataset;
     document.getElementById('editName').value        = d.name;
     document.getElementById('editDesignation').value = d.designation;
@@ -236,12 +244,27 @@ document.querySelectorAll('.btn-edit-officer').forEach(function(btn) {
     document.getElementById('editRoom').value        = d.room;
     document.getElementById('editPhotoUrl').value    = d.photo;
     document.getElementById('editWorkStart').value   = d.workStart;
-    document.getElementById('editWorkEnd').value     = d.workEnd;
+    document.getElementById('editWorkEnd').value      = d.workEnd;
     document.getElementById('editDailyLimit').value  = d.dailyLimit;
     document.getElementById('editIsActive').value    = d.isActive;
     document.getElementById('editOfficerForm').action = '/admin/officers/' + d.id + '/edit';
-    new bootstrap.Modal(document.getElementById('editOfficerModal')).show();
+
+    var modalEl = document.getElementById('editOfficerModal');
+    var instance = bootstrap.Modal.getOrCreateInstance(modalEl);
+    instance.show();
   });
+});
+
+// Extra safety net: whenever any modal fully finishes closing, sweep away
+// any backdrop that Bootstrap might have failed to remove (this can happen
+// if a modal is closed by browser back button, quick double-clicks, etc.)
+document.addEventListener('hidden.bs.modal', function() {
+  if (!document.querySelector('.modal.show')) {
+    document.querySelectorAll('.modal-backdrop').forEach(function(el) { el.remove(); });
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+  }
 });
 </script>
 {% endblock %}
