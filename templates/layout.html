@@ -600,6 +600,20 @@
 
 <!-- ── Scripts ───────────────────────────────────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// GLOBAL FIX: .main-content has a CSS animation (fadeSlideIn) which permanently
+// creates its own stacking context per the CSS spec. This traps the z-index of
+// ANY Bootstrap modal nested inside it below the modal-backdrop (which Bootstrap
+// always appends directly to <body>), making every modal on the site unclickable.
+// Fix: whenever any modal is about to open, move it to be a direct child of
+// <body> first, so it's no longer trapped inside .main-content's stacking context.
+document.addEventListener('show.bs.modal', function (event) {
+  var modalEl = event.target;
+  if (modalEl && modalEl.parentElement !== document.body) {
+    document.body.appendChild(modalEl);
+  }
+});
+</script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
 {% if current_user.is_authenticated %}
