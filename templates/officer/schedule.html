@@ -250,10 +250,11 @@
   <div class="dropdown">
     <button class="btn btn-sm btn-outline-secondary dropdown-toggle-no-caret"
             data-bs-toggle="dropdown" aria-expanded="false"
+            data-bs-boundary="viewport" data-bs-display="static"
             style="padding:0.25rem 0.5rem;" title="More options">
       <i class="fas fa-ellipsis-v"></i>
     </button>
-    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:210px;font-size:0.85rem;">
+    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:210px;font-size:0.85rem;max-height:70vh;overflow-y:auto;">
 
       {% if apt.status == 'Pending' %}
       <li><span class="dropdown-header text-uppercase" style="font-size:0.7rem;letter-spacing:.05em;">Booking Response</span></li>
