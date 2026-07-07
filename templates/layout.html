@@ -613,6 +613,41 @@ document.addEventListener('show.bs.modal', function (event) {
     document.body.appendChild(modalEl);
   }
 });
+
+// GLOBAL FIX: any dropdown-menu (e.g. the "..." action menu in tables) that
+// lives inside a container with overflow set (like .table-responsive, used
+// for horizontal scrolling on tables) gets visually clipped, no matter what
+// z-index or Popper boundary settings are used — CSS overflow clips the
+// entire DOM subtree regardless of position/z-index. Fix: temporarily move
+// the dropdown-menu to <body> while it's open, then put it back where it
+// belongs when closed, so the table structure isn't disturbed.
+document.addEventListener('show.bs.dropdown', function (event) {
+  var toggleEl = event.target;
+  var menuEl = toggleEl.parentElement ? toggleEl.parentElement.querySelector('.dropdown-menu') : null;
+  if (!menuEl || menuEl.dataset.movedToBody === '1') return;
+
+  // Remember exactly where it came from so we can put it back.
+  menuEl._origParent = menuEl.parentNode;
+  menuEl._origNextSibling = menuEl.nextSibling;
+  menuEl.dataset.movedToBody = '1';
+  document.body.appendChild(menuEl);
+});
+
+document.addEventListener('hidden.bs.dropdown', function (event) {
+  var toggleEl = event.target;
+  var menuEl = document.body.querySelector('.dropdown-menu[data-moved-to-body="1"]');
+  // Narrow down to the one belonging to this toggle, if multiple are open across the page.
+  document.querySelectorAll('.dropdown-menu[data-moved-to-body="1"]').forEach(function (m) {
+    if (m._origParent && !m.classList.contains('show')) {
+      if (m._origNextSibling) {
+        m._origParent.insertBefore(m, m._origNextSibling);
+      } else {
+        m._origParent.appendChild(m);
+      }
+      delete m.dataset.movedToBody;
+    }
+  });
+});
 </script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
