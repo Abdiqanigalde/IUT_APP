@@ -123,6 +123,32 @@
 </div>
 {% endmacro %}
 
+{# ── Mark Completed Modal ── #}
+{% macro complete_modal(apt, prefix) %}
+<div class="modal fade" id="complete{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog modal-sm"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title text-success"><i class="fas fa-check-circle me-2"></i>Mark as Completed</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.mark_completed', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="text-muted small">This will mark the appointment as completed.</p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Outcome / Notes (optional)</label>
+          <textarea name="completion_note" class="form-control" rows="2" placeholder="Summary of what was discussed or resolved..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success btn-sm"><i class="fas fa-check-circle me-1"></i>Mark Completed</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
 {# ── No-Show Modal ── #}
 {% macro noshow_modal(apt, prefix) %}
 <div class="modal fade" id="noshow{{ prefix }}{{ apt.id }}" tabindex="-1">
@@ -316,6 +342,13 @@
         </a>
       </li>
       <li>
+        <a class="dropdown-item text-success" href="#"
+           data-bs-toggle="modal"
+           data-bs-target="#complete{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-check-circle me-2"></i>Mark as completed
+        </a>
+      </li>
+      <li>
         <a class="dropdown-item" href="#"
            data-bs-toggle="modal"
            data-bs-target="#noshow{{ prefix }}{{ apt.id }}">
@@ -350,6 +383,7 @@
 {{ req_reschedule_modal(apt, prefix) }}
 {{ location_modal(apt, prefix) }}
 {{ guests_modal(apt, prefix) }}
+{{ complete_modal(apt, prefix) }}
 {{ noshow_modal(apt, prefix) }}
 {{ report_modal(apt, prefix) }}
 {{ cancel_modal(apt, prefix) }}
