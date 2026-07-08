@@ -614,42 +614,71 @@ document.addEventListener('show.bs.modal', function (event) {
   }
 });
 
-// GLOBAL FIX: any dropdown-menu (e.g. the "..." action menu in tables) that
-// lives inside a container with overflow set (like .table-responsive, used
-// for horizontal scrolling on tables) gets visually clipped, no matter what
-// z-index or Popper boundary settings are used — CSS overflow clips the
-// entire DOM subtree regardless of position/z-index. Fix: temporarily move
-// the dropdown-menu to <body> while it's open, then put it back where it
-// belongs when closed, so the table structure isn't disturbed.
-document.addEventListener('show.bs.dropdown', function (event) {
-  var toggleEl = event.target;
-  var menuEl = toggleEl.parentElement ? toggleEl.parentElement.querySelector('.dropdown-menu') : null;
-  if (!menuEl || menuEl.dataset.movedToBody === '1') return;
+// GLOBAL FIX: any dropdown-menu (e.g. the "..." action menu in tables, or the
+// profile menu in the navbar) that lives inside a container with overflow set
+// (like .table-responsive, used for horizontal scrolling on tables) gets
+// visually clipped, no matter what z-index or Popper boundary settings are
+// used — CSS overflow clips the entire DOM subtree regardless of
+// position/z-index. Fix: once Bootstrap has FULLY opened and positioned the
+// menu (waiting for 'shown.bs.dropdown', not 'show.bs.dropdown', is
+// important — moving it too early interferes with Bootstrap's own setup and
+// can stop the menu from opening at all), capture its exact on-screen
+// position, then move it to <body> with that same position locked in via
+// position:fixed. On close, move it back to where it belongs.
+(function () {
+  var relocated = null;
 
-  // Remember exactly where it came from so we can put it back.
-  menuEl._origParent = menuEl.parentNode;
-  menuEl._origNextSibling = menuEl.nextSibling;
-  menuEl.dataset.movedToBody = '1';
-  document.body.appendChild(menuEl);
-});
+  document.addEventListener('shown.bs.dropdown', function (event) {
+    var toggleEl = event.target;
 
-document.addEventListener('hidden.bs.dropdown', function (event) {
-  // Defer the move-back to the next tick. Moving a DOM node while a click
-  // inside it (e.g. clicking "Logout") is still being processed can cancel
-  // that click's default action (the link navigation) on some browsers.
-  setTimeout(function () {
-    document.querySelectorAll('.dropdown-menu[data-moved-to-body="1"]').forEach(function (m) {
-      if (m._origParent && !m.classList.contains('show')) {
-        if (m._origNextSibling) {
-          m._origParent.insertBefore(m, m._origNextSibling);
-        } else {
-          m._origParent.appendChild(m);
-        }
-        delete m.dataset.movedToBody;
+    // Only relocate dropdowns that are actually inside a container that can
+    // clip them (like .table-responsive). The navbar profile dropdown, for
+    // example, is never clipped by anything and must be left completely
+    // alone — moving it breaks Bootstrap's own positioning for no reason.
+    var clippingAncestor = toggleEl.closest('.table-responsive, .modal-body');
+    if (!clippingAncestor) return;
+
+    var parent = toggleEl.closest('.dropdown, .btn-group') || toggleEl.parentElement;
+    var menuEl = parent ? parent.querySelector('.dropdown-menu.show') : null;
+    if (!menuEl) return;
+
+    var rect = menuEl.getBoundingClientRect();
+    relocated = {
+      menuEl: menuEl,
+      origParent: menuEl.parentNode,
+      origNextSibling: menuEl.nextSibling,
+      origStyle: menuEl.getAttribute('style') || ''
+    };
+
+    document.body.appendChild(menuEl);
+    menuEl.style.position = 'fixed';
+    menuEl.style.top = rect.top + 'px';
+    menuEl.style.left = rect.left + 'px';
+    menuEl.style.right = 'auto';
+    menuEl.style.margin = '0';
+    menuEl.style.zIndex = '3000';
+  });
+
+  document.addEventListener('hide.bs.dropdown', function () {
+    if (!relocated) return;
+    var r = relocated;
+    relocated = null;
+    // Deferred so a click inside the menu (e.g. "Sign Out") finishes
+    // navigating before we move the element back.
+    setTimeout(function () {
+      if (r.origNextSibling) {
+        r.origParent.insertBefore(r.menuEl, r.origNextSibling);
+      } else {
+        r.origParent.appendChild(r.menuEl);
       }
-    });
-  }, 0);
-});
+      if (r.origStyle) {
+        r.menuEl.setAttribute('style', r.origStyle);
+      } else {
+        r.menuEl.removeAttribute('style');
+      }
+    }, 0);
+  });
+})();
 </script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
