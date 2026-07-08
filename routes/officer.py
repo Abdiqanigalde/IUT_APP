@@ -370,6 +370,63 @@ def add_guests(apt_id):
     return redirect(request.referrer or url_for('officer.dashboard'))
 
 
+# ── Mark as Completed ──────────────────────────────────────────────────────────
+@officer_bp.route('/complete/<int:apt_id>', methods=['POST'])
+@login_required
+@officer_required
+def mark_completed(apt_id):
+    """
+    Manually mark an appointment as Completed once the meeting has actually
+    happened. This covers cases where there's no QR check-in (the only other
+    place that sets status='Completed').
+    """
+    apt, officer = _get_apt_or_abort(apt_id)
+    if not apt:
+        return redirect(url_for('officer.dashboard'))
+
+    if apt.status == 'Completed':
+        flash('Appointment is already marked as completed.', 'info')
+        return redirect(request.referrer or url_for('officer.dashboard'))
+
+    if apt.status not in ('Approved', 'Pending'):
+        flash(f'Cannot complete an appointment with status "{apt.status}".', 'warning')
+        return redirect(request.referrer or url_for('officer.dashboard'))
+
+    note = request.form.get('note', '').strip()
+
+    apt.status = 'Completed'
+    if note:
+        apt.notes = note
+
+    msg = (
+        f"Your appointment with {apt.officer.name} on "
+        f"{apt.date.strftime('%d %b %Y')} at {apt.time} "
+        f"has been marked as Completed."
+    )
+    db.session.add(Notification(user_id=apt.user_id, message=msg))
+    db.session.add(AuditLog(
+        admin_id=current_user.id,
+        action='mark_completed',
+        detail=f"#{apt.id} {apt.student_name} → Completed"
+    ))
+    db.session.commit()
+
+    from utils import send_email
+    student = db.session.get(User, apt.user_id)
+    body = (
+        f"<p>Dear {apt.student_name},</p>"
+        f"<p>Your appointment with <strong>{apt.officer.name}</strong> on "
+        f"<strong>{apt.date.strftime('%d %b %Y')} at {apt.time}</strong> "
+        f"has been marked as <strong>Completed</strong>.</p>"
+        + (f"<p><strong>Notes:</strong> {note}</p>" if note else "")
+        + "<p>Thank you for visiting.</p>"
+    )
+    send_email('Appointment Completed — IUT', [student.email], body)
+
+    flash('Appointment marked as completed.', 'success')
+    return redirect(request.referrer or url_for('officer.dashboard'))
+
+
 # ── Mark as No-Show ────────────────────────────────────────────────────────────
 @officer_bp.route('/no-show/<int:apt_id>', methods=['POST'])
 @login_required
