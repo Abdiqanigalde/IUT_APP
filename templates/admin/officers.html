@@ -7,7 +7,7 @@
   <div class="col-md-4">
     <div class="card p-4">
       <h5 class="fw-bold mb-3">Add New Officer</h5>
-      <form method="POST">
+      <form method="POST" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
         <div class="mb-2">
           {{ form.name.label(class="form-label small fw-semibold") }}
@@ -20,6 +20,7 @@
         <div class="mb-2">
           {{ form.office.label(class="form-label small fw-semibold") }}
           {{ form.office(class="form-select form-select-sm") }}
+          <small class="text-muted">Which office this officer belongs to</small>
         </div>
         <div class="mb-2">
           {{ form.handles.label(class="form-label small fw-semibold") }}
@@ -42,9 +43,21 @@
         </div>
         <hr class="my-2">
         <div class="mb-2">
-          {{ form.photo_url.label(class="form-label small fw-semibold") }}
-          {{ form.photo_url(class="form-control form-control-sm", placeholder="e.g. VC.jpg") }}
-          <small class="text-muted d-block">Filename in static/ folder (optional)</small>
+          {{ form.photo.label(class="form-label small fw-semibold") }}
+          {{ form.photo(class="form-control form-control-sm") }}
+          <small class="text-muted d-block">JPG, PNG, or WEBP</small>
+          {% if form.photo.errors %}
+          <small class="text-danger d-block">{{ form.photo.errors[0] }}</small>
+          {% endif %}
+        </div>
+        <div class="mb-2">
+          <a class="small text-muted" data-bs-toggle="collapse" href="#legacyPhotoField" role="button">
+            <i class="fas fa-chevron-down me-1"></i>Advanced: use a filename instead
+          </a>
+          <div class="collapse" id="legacyPhotoField">
+            {{ form.photo_url.label(class="form-label small fw-semibold mt-2") }}
+            {{ form.photo_url(class="form-control form-control-sm", placeholder="e.g. VC.jpg") }}
+          </div>
         </div>
         <div class="row g-2 mb-2">
           <div class="col-6">{{ form.work_start.label(class="form-label small fw-semibold") }}{{ form.work_start(class="form-control form-control-sm") }}</div>
@@ -91,13 +104,13 @@
               {{ officer.name }}<br>
               <small class="text-muted">{{ officer.designation }}</small>
               {% if officer.office %}
-              <br><small class="text-muted" style="font-size:.75rem;">
+              <br><span class="badge bg-light text-dark border" style="font-size:.7rem;">
                 <i class="fas fa-building me-1"></i>{{ officer.office.name }}
-              </small>
+              </span>
               {% else %}
-              <br><small class="text-warning" style="font-size:.75rem;">
-                <i class="fas fa-exclamation-circle me-1"></i>No office assigned
-              </small>
+              <br><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size:.7rem;">
+                No office assigned
+              </span>
               {% endif %}
               {% if officer.room %}
               <br><small class="text-muted" style="font-size:.75rem;">
@@ -134,10 +147,10 @@
                   data-id="{{ officer.id }}"
                   data-name="{{ officer.name | e }}"
                   data-designation="{{ officer.designation | e }}"
-                  data-office-id="{{ officer.office_id or '' }}"
+                  data-office-id="{{ officer.office_id or 0 }}"
                   data-handles="{{ (officer.handles or '') | e }}"
                   data-room="{{ (officer.room or '') | e }}"
-                  data-photo="{{ (officer.photo_url or '') | e }}"
+                  data-photo="{{ (officer.photo_display_url() or '') | e }}"
                   data-work-start="{{ officer.work_start or '08:00' }}"
                   data-work-end="{{ officer.work_end or '17:00' }}"
                   data-daily-limit="{{ officer.daily_limit }}"
@@ -178,7 +191,7 @@
         <h5 class="modal-title"><i class="fas fa-edit me-2 text-primary"></i>Edit Officer</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form method="POST" id="editOfficerForm">
+      <form method="POST" id="editOfficerForm" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <div class="row g-3">
@@ -191,11 +204,11 @@
               <input type="text" name="edit_designation" id="editDesignation" class="form-control form-control-sm" required>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-semibold">Office</label>
+              <label class="form-label small fw-semibold">Office / Department</label>
               <select name="edit_office_id" id="editOfficeId" class="form-select form-select-sm">
-                <option value="">-- No Office --</option>
-                {% for office in offices %}
-                <option value="{{ office.id }}">{{ office.name }}</option>
+                <option value="0">— No office / unassigned —</option>
+                {% for o in offices %}
+                <option value="{{ o.id }}">{{ o.name }}{% if not o.is_active %} (inactive){% endif %}</option>
                 {% endfor %}
               </select>
             </div>
@@ -213,9 +226,15 @@
               <input type="text" name="edit_room" id="editRoom" class="form-control form-control-sm" placeholder="e.g. Admin Building, Room 313">
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-semibold">Photo Filename</label>
-              <input type="text" name="edit_photo_url" id="editPhotoUrl" class="form-control form-control-sm" placeholder="e.g. VC.jpg">
-              <small class="text-muted">Filename in static/ folder</small>
+              <label class="form-label small fw-semibold">Current Photo</label>
+              <div class="d-flex align-items-center gap-2">
+                <img id="editPhotoPreview" src="" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;display:none;border:1px solid #dee2e6;">
+                <span id="editPhotoNone" class="text-muted small">No photo set</span>
+              </div>
+              <label class="form-label small fw-semibold mt-2">Upload New Photo</label>
+              <input type="file" name="edit_photo_file" id="editPhotoFile" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp">
+              <small class="text-muted">Leave blank to keep the current photo</small>
+              <input type="hidden" name="edit_photo_url" id="editPhotoUrl">
             </div>
             <div class="col-12"><hr class="my-0"></div>
             <div class="col-md-3">
@@ -263,10 +282,21 @@ document.querySelectorAll('.btn-edit-officer').forEach(function(btn) {
     var d = this.dataset;
     document.getElementById('editName').value        = d.name;
     document.getElementById('editDesignation').value = d.designation;
-    document.getElementById('editOfficeId').value     = d.officeId || '';
+    document.getElementById('editOfficeId').value    = d.officeId;
     document.getElementById('editHandles').value     = d.handles;
     document.getElementById('editRoom').value        = d.room;
-    document.getElementById('editPhotoUrl').value    = d.photo;
+    document.getElementById('editPhotoUrl').value    = '';
+    document.getElementById('editPhotoFile').value   = '';
+    var previewImg  = document.getElementById('editPhotoPreview');
+    var previewNone = document.getElementById('editPhotoNone');
+    if (d.photo) {
+      previewImg.src = d.photo;
+      previewImg.style.display = 'inline-block';
+      previewNone.style.display = 'none';
+    } else {
+      previewImg.style.display = 'none';
+      previewNone.style.display = 'inline';
+    }
     document.getElementById('editWorkStart').value   = d.workStart;
     document.getElementById('editWorkEnd').value      = d.workEnd;
     document.getElementById('editDailyLimit').value  = d.dailyLimit;
