@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
+from flask import url_for
 from datetime import datetime, timezone
 import secrets
 
@@ -50,13 +51,16 @@ class PasswordResetToken(db.Model):
 
 
 class Office(db.Model):
+    """A department/office (e.g. 'Office of the Registrar') that groups officers."""
     id          = db.Column(db.Integer, primary_key=True)
-    name        = db.Column(db.String(150), nullable=False, unique=True)
-    description = db.Column(db.String(255), nullable=True)
-    icon        = db.Column(db.String(50), nullable=True)   # FontAwesome class, e.g. "fa-user-tie"
-    created_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    name        = db.Column(db.String(150), nullable=False)
+    slug        = db.Column(db.String(150), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    icon        = db.Column(db.String(50), nullable=True, default='fa-building')
+    sort_order  = db.Column(db.Integer, default=0)
+    is_active   = db.Column(db.Boolean, default=True)
 
-    officers    = db.relationship('Officer', backref='office', lazy=True)
+    officers = db.relationship('Officer', backref='office', lazy=True)
 
     def active_officer_count(self):
         return sum(1 for o in self.officers if o.is_active)
@@ -66,6 +70,7 @@ class Officer(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     name            = db.Column(db.String(100), nullable=False)
     designation     = db.Column(db.String(100), nullable=False)
+    office_id       = db.Column(db.Integer, db.ForeignKey('office.id'), nullable=True)
     bio             = db.Column(db.Text, nullable=True)
     handles         = db.Column(db.Text, nullable=True)
     email           = db.Column(db.String(120), nullable=True)
@@ -77,7 +82,6 @@ class Officer(db.Model):
     daily_limit     = db.Column(db.Integer, default=0)
     recurring_off_days = db.Column(db.String(20), default="")
     avg_appointment_duration = db.Column(db.Integer, default=15)
-    office_id       = db.Column(db.Integer, db.ForeignKey('office.id'), nullable=True)
 
     unavailabilities = db.relationship(
         'OfficerUnavailability', backref='officer', lazy=True, cascade='all, delete-orphan'
@@ -95,6 +99,15 @@ class Officer(db.Model):
         if not self.handles:
             return []
         return [h.strip() for h in self.handles.split(',') if h.strip()]
+
+    def photo_display_url(self):
+        """Returns a usable <img src> for this officer's photo, whether it's
+        a Cloudinary URL (new uploads) or a legacy filename in static/."""
+        if not self.photo_url:
+            return None
+        if self.photo_url.startswith('http://') or self.photo_url.startswith('https://'):
+            return self.photo_url
+        return url_for('static', filename=self.photo_url)
 
 
 class OfficerWorkingHours(db.Model):
