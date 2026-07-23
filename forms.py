@@ -91,9 +91,16 @@ class UnavailabilityForm(FlaskForm):
     reason = StringField('Reason', validators=[DataRequired(), Length(max=255)])
     submit = SubmitField('Mark Unavailable')
 
+class OfficeForm(FlaskForm):
+    name = StringField('Office Name', validators=[DataRequired(), Length(max=150)])
+    description = StringField('Short Description', validators=[Optional(), Length(max=255)])
+    icon = StringField('Icon (FontAwesome class, e.g. fa-user-tie)', validators=[Optional(), Length(max=50)])
+    submit = SubmitField('Save Office')
+
 class OfficerProfileForm(FlaskForm):
     name = StringField('Officer Name', validators=[DataRequired()])
     designation = StringField('Designation', validators=[DataRequired()])
+    office = SelectField('Office', coerce=int, validators=[Optional()])
     bio = TextAreaField('Bio / About', validators=[Optional(), Length(max=500)])
     handles = StringField('Issues Handled (comma-separated)', validators=[Optional(), Length(max=300)])
     email = StringField('Office Email', validators=[Optional(), Email()])
