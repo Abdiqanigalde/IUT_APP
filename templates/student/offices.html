@@ -1,0 +1,68 @@
+{% extends "layout.html" %}
+{% block content %}
+<h3 class="fw-bold mb-2">University Offices</h3>
+<p class="text-muted mb-4">Choose an office to see the officers working there.</p>
+
+<div class="row g-4">
+{% for office in offices %}
+<div class="col-md-4">
+  <a href="{{ url_for('student.officer_list', office_id=office.id) }}" class="text-decoration-none">
+    <div class="card h-100 p-0 overflow-hidden office-card">
+      <div style="background:linear-gradient(135deg,#0d4f3c,#1a7a5e);padding:32px 24px;text-align:center;">
+        <div style="width:64px;height:64px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:1.6rem;color:#fff;">
+          <i class="fas {{ office.icon or 'fa-building' }}"></i>
+        </div>
+        <h5 style="color:#fff;font-weight:700;margin:0;">{{ office.name }}</h5>
+      </div>
+      <div class="card-body text-center">
+        {% if office.description %}
+        <p class="small text-muted mb-2">{{ office.description }}</p>
+        {% endif %}
+        <span class="badge bg-light text-dark border">
+          <i class="fas fa-user-tie me-1"></i>
+          {{ office_counts.get(office.id, 0) }} officer{{ 's' if office_counts.get(office.id, 0) != 1 else '' }}
+        </span>
+      </div>
+    </div>
+  </a>
+</div>
+{% endfor %}
+
+{% if unassigned_count > 0 %}
+<div class="col-md-4">
+  <a href="{{ url_for('student.officer_list', office='none') }}" class="text-decoration-none">
+    <div class="card h-100 p-0 overflow-hidden office-card">
+      <div style="background:linear-gradient(135deg,#555,#777);padding:32px 24px;text-align:center;">
+        <div style="width:64px;height:64px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:1.6rem;color:#fff;">
+          <i class="fas fa-user-tie"></i>
+        </div>
+        <h5 style="color:#fff;font-weight:700;margin:0;">Other Officers</h5>
+      </div>
+      <div class="card-body text-center">
+        <p class="small text-muted mb-2">Officers not yet assigned to an office</p>
+        <span class="badge bg-light text-dark border">
+          <i class="fas fa-user-tie me-1"></i>
+          {{ unassigned_count }} officer{{ 's' if unassigned_count != 1 else '' }}
+        </span>
+      </div>
+    </div>
+  </a>
+</div>
+{% endif %}
+</div>
+
+{% if not offices %}
+<div class="alert alert-info mt-3">No offices have been set up yet.</div>
+{% endif %}
+
+<div class="mt-4">
+  <a href="{{ url_for('student.officer_list') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-users me-1"></i>View all officers
+  </a>
+</div>
+
+<style>
+.office-card { transition: transform .15s ease, box-shadow .15s ease; }
+.office-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.12); }
+</style>
+{% endblock %}
