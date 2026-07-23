@@ -1,4 +1,5 @@
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileAllowed
 from wtforms import (StringField, PasswordField, SubmitField, SelectField,
                      TextAreaField, DateField, IntegerField, TimeField, BooleanField, SelectMultipleField)
 from wtforms.validators import DataRequired, Email, EqualTo, Length, ValidationError, Optional, NumberRange
@@ -40,6 +41,16 @@ class RescheduleForm(FlaskForm):
     date = DateField('New Date', validators=[DataRequired()])
     time = SelectField('New Time Slot', choices=[], validators=[DataRequired()])
     submit = SubmitField('Reschedule')
+
+class OfficeForm(FlaskForm):
+    name = StringField('Office Name', validators=[DataRequired(), Length(max=150)],
+                        render_kw={'placeholder': 'e.g. Office of the Registrar'})
+    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
+    icon = StringField('Icon (Font Awesome class)', validators=[Optional(), Length(max=50)],
+                        render_kw={'placeholder': 'e.g. fa-building'}, default='fa-building')
+    sort_order = IntegerField('Sort Order', validators=[Optional(), NumberRange(min=0)], default=0)
+    submit = SubmitField('Save Office')
+
 
 class OfficerForm(FlaskForm):
     name = StringField('Officer Name', validators=[DataRequired()])
@@ -91,22 +102,17 @@ class UnavailabilityForm(FlaskForm):
     reason = StringField('Reason', validators=[DataRequired(), Length(max=255)])
     submit = SubmitField('Mark Unavailable')
 
-class OfficeForm(FlaskForm):
-    name = StringField('Office Name', validators=[DataRequired(), Length(max=150)])
-    description = StringField('Short Description', validators=[Optional(), Length(max=255)])
-    icon = StringField('Icon (FontAwesome class, e.g. fa-user-tie)', validators=[Optional(), Length(max=50)])
-    submit = SubmitField('Save Office')
-
 class OfficerProfileForm(FlaskForm):
     name = StringField('Officer Name', validators=[DataRequired()])
     designation = StringField('Designation', validators=[DataRequired()])
-    office = SelectField('Office', coerce=int, validators=[Optional()])
+    office = SelectField('Office / Department', coerce=int, validators=[Optional()])
     bio = TextAreaField('Bio / About', validators=[Optional(), Length(max=500)])
     handles = StringField('Issues Handled (comma-separated)', validators=[Optional(), Length(max=300)])
     email = StringField('Office Email', validators=[Optional(), Email()])
     login_email = StringField('Login Email (for officer portal)', validators=[DataRequired(), Email()])
     login_password = PasswordField('Login Password', validators=[DataRequired(), Length(min=6)])
-    photo_url = StringField('Photo Filename (e.g. VC.jpg)', validators=[Optional(), Length(max=255)])
+    photo = FileField('Upload Photo', validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'webp'], 'Images only (jpg, jpeg, png, webp)!')])
+    photo_url = StringField('Or Photo Filename (legacy — leave blank if uploading above)', validators=[Optional(), Length(max=255)])
     room = StringField('Room / Office Location', validators=[Optional()])
     work_start = StringField('Work Start (HH:MM)', validators=[DataRequired()], default='08:00')
     work_end = StringField('Work End (HH:MM)', validators=[DataRequired()], default='17:00')
