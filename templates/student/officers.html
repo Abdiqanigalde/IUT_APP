@@ -1,21 +1,14 @@
 {% extends "layout.html" %}
 {% block content %}
+{% if office %}
 <nav class="mb-2 small">
-  <a href="{{ url_for('student.office_list') }}" class="text-decoration-none"><i class="fas fa-building me-1"></i>Offices</a>
-  {% if office %}
-  <span class="text-muted mx-1">/</span> <span class="text-muted">{{ office.name }}</span>
-  {% endif %}
+  <a href="{{ url_for('student.office_list') }}" class="text-decoration-none"><i class="fas fa-arrow-left me-1"></i>All Offices</a>
 </nav>
-<h3 class="fw-bold mb-2">{{ office.name if office else 'University Officers' }}</h3>
-<p class="text-muted mb-4">
-  {% if office %}
-    Officers working under {{ office.name }}. Click an officer to see full details.
-  {% else %}
-    Browse officer profiles before booking. Click an officer to see full details.
-  {% endif %}
-</p>
-{% if not officers %}
-<div class="alert alert-info">No officers found{% if office %} for this office{% endif %}.</div>
+<h3 class="fw-bold mb-2"><i class="fas {{ office.icon or 'fa-building' }} me-2 text-muted"></i>{{ office.name }}</h3>
+<p class="text-muted mb-4">Officers working in this office. Click one to see full details.</p>
+{% else %}
+<h3 class="fw-bold mb-2">University Officers</h3>
+<p class="text-muted mb-4">Browse officer profiles before booking. Click an officer to see full details.</p>
 {% endif %}
 <div class="row g-4">
 {% for officer in officers %}
@@ -26,9 +19,9 @@
 <div class="col-md-4">
   <div class="card h-100 p-0 overflow-hidden">
     <div style="background:linear-gradient(135deg,#0d4f3c,#1a7a5e);padding:28px 24px 20px;text-align:center;">
-      {% if officer.photo_url %}
+      {% if officer.photo_display_url() %}
       <div style="width:82px;height:82px;border-radius:50%;overflow:hidden;margin:0 auto 12px;border:2px solid rgba(255,255,255,.4);box-shadow:0 2px 10px rgba(0,0,0,.3);">
-        <img src="{{ url_for('static', filename=officer.photo_url) }}" alt="{{ officer.name }}" style="width:100%;height:100%;object-fit:cover;object-position:top;">
+        <img src="{{ officer.photo_display_url() }}" alt="{{ officer.name }}" style="width:100%;height:100%;object-fit:cover;object-position:top;">
       </div>
       {% else %}
       <div style="width:72px;height:72px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:2rem;color:#fff;">
@@ -76,5 +69,10 @@
   </div>
 </div>
 {% endfor %}
+{% if not officers %}
+<div class="col-12">
+  <div class="alert alert-info">No officers are currently listed here.</div>
+</div>
+{% endif %}
 </div>
 {% endblock %}
