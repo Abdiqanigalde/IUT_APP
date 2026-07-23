@@ -415,6 +415,27 @@ with app.app_context():
     except Exception as _office_err:
         print(f'[IUT] office migration error (non-fatal): {_office_err}')
 
+    # ── Performance indexes on existing tables ──────────────────────────────────
+    # create_all() only creates indexes for brand-new tables — these tables
+    # already existed, so we add the indexes explicitly. IF NOT EXISTS makes
+    # this safe to run on every boot.
+    try:
+        from sqlalchemy import text
+        index_statements = [
+            'CREATE INDEX IF NOT EXISTS ix_appointment_date ON appointment (date)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_officer_id ON appointment (officer_id)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_status ON appointment (status)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_user_id ON appointment (user_id)',
+            'CREATE INDEX IF NOT EXISTS ix_officer_office_id ON officer (office_id)',
+        ]
+        with db.engine.connect() as conn:
+            for stmt in index_statements:
+                conn.execute(text(stmt))
+            conn.commit()
+        print('[IUT] Performance indexes verified/created ✅')
+    except Exception as _index_err:
+        print(f'[IUT] index migration error (non-fatal): {_index_err}')
+
 
 # ── Session timeout ───────────────────────────────────────────────────────────
 @app.before_request
