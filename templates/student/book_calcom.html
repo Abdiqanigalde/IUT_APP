@@ -265,10 +265,10 @@ body { background: var(--cal-bg) !important; }
         <div class="officer-card" id="officerCard{{ o.id }}"
              data-id="{{ o.id }}" data-name="{{ o.name }}"
              data-desig="{{ o.designation }}" data-room="{{ o.room or 'N/A' }}"
-             data-photo="{{ o.photo_url or '' }}"
+             data-photo="{{ o.photo_display_url() or '' }}"
              onclick="selectOfficer(this)">
-          {% if o.photo_url %}
-          <img src="{{ url_for('static', filename=o.photo_url) }}" class="officer-avatar-sm" alt="{{ o.name }}"
+          {% if o.photo_display_url() %}
+          <img src="{{ o.photo_display_url() }}" class="officer-avatar-sm" alt="{{ o.name }}"
                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
           <div class="officer-avatar-placeholder" style="display:none">{{ o.name[0] }}</div>
           {% else %}
@@ -533,7 +533,7 @@ function selectOfficer(card) {
   STATE.officerId=card.dataset.id; STATE.officerName=card.dataset.name; STATE.officerRoom=card.dataset.room;
   const photo=card.dataset.photo;
   document.getElementById('leftAvatar').innerHTML=photo
-    ?`<img src="/static/${photo}" class="cal-officer-avatar" alt="${STATE.officerName}" onerror="this.outerHTML='<div class=\\'cal-officer-avatar placeholder\\'>${STATE.officerName[0]}</div>'">`
+    ?`<img src="${photo}" class="cal-officer-avatar" alt="${STATE.officerName}" onerror="this.outerHTML='<div class=\\'cal-officer-avatar placeholder\\'>${STATE.officerName[0]}</div>'">`
     :`<div class="cal-officer-avatar placeholder">${STATE.officerName[0]}</div>`;
   document.getElementById('leftTitle').textContent=STATE.officerName;
   document.getElementById('leftDept').textContent=card.dataset.desig||'';
