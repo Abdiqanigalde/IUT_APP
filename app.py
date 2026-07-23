@@ -320,6 +320,65 @@ with app.app_context():
     except Exception as _holiday_err:
         print(f'[IUT] global_holiday migration error (non-fatal): {_holiday_err}')
 
+    # ── Office table + Officer.office_id migration ─────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect6
+        from models import Office
+        inspector6  = sa_inspect6(db.engine)
+        all_tables6 = inspector6.get_table_names()
+
+        if 'office' not in all_tables6:
+            db.create_all()
+            print('[IUT] office table created ✅')
+        else:
+            print('[IUT] office table already exists — skipping.')
+
+        # Ensure officer.office_id column exists
+        officer_cols = {c['name'] for c in sa_inspect6(db.engine).get_columns('officer')}
+        if 'office_id' not in officer_cols:
+            is_pg6 = 'postgresql' in str(db.engine.url)
+            ref = 'REFERENCES office(id)' if is_pg6 else 'REFERENCES office(id)'
+            with db.engine.connect() as conn:
+                conn.execute(text(f'ALTER TABLE officer ADD COLUMN office_id INTEGER {ref}'))
+                conn.commit()
+            print('[IUT] officer: added office_id column ✅')
+
+        # Seed the three known offices if they don't exist yet, and backfill
+        # any existing officers into them by matching on designation keywords.
+        default_offices = [
+            ('Office of the Registrar',          'Academic records, transcripts, registration', 'fa-file-signature'),
+            ('Office of the Vice Chancellor',    'University leadership and administration',    'fa-user-tie'),
+            ('Office of the Pro Vice Chancellor','Academic affairs and student support',         'fa-user-graduate'),
+        ]
+        for off_name, off_desc, off_icon in default_offices:
+            if not Office.query.filter_by(name=off_name).first():
+                db.session.add(Office(name=off_name, description=off_desc, icon=off_icon))
+        db.session.commit()
+
+        match_rules = [
+            ('registrar',       'Office of the Registrar'),
+            ('pro vice',        'Office of the Pro Vice Chancellor'),
+            ('pro-vice',        'Office of the Pro Vice Chancellor'),
+            ('pro vc',          'Office of the Pro Vice Chancellor'),
+            ('vice chancellor', 'Office of the Vice Chancellor'),
+            ('vc',              'Office of the Vice Chancellor'),
+        ]
+        from models import Officer as _Officer
+        unassigned = _Officer.query.filter_by(office_id=None).all()
+        for officer in unassigned:
+            desig = (officer.designation or '').lower()
+            for keyword, office_name in match_rules:
+                if keyword in desig:
+                    office = Office.query.filter_by(name=office_name).first()
+                    if office:
+                        officer.office_id = office.id
+                    break
+        db.session.commit()
+
+    except Exception as _office_err:
+        db.session.rollback()
+        print(f'[IUT] office migration error (non-fatal): {_office_err}')
+
 
 # ── Session timeout ───────────────────────────────────────────────────────────
 @app.before_request
