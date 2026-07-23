@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, Response
 from flask_login import login_required, current_user
-from models import db, Appointment, User, Officer, Notification, OfficerUnavailability, WaitlistEntry
+from models import db, Appointment, User, Officer, Notification, OfficerUnavailability, WaitlistEntry, Office
 from forms import AppointmentForm, ProfileForm, RescheduleForm
 from datetime import datetime, timedelta, timezone
 from flask_bcrypt import Bcrypt
@@ -882,12 +882,40 @@ def toggle_darkmode():
 
 # ── Officer list & profile ────────────────────────────────────────────────────
 
+@student_bp.route('/offices')
+@login_required
+def office_list():
+    """Office-first browsing entry point: shows each office as a card. Click one
+    to see only the officers under it (like the real registrar site)."""
+    offices = Office.query.order_by(Office.name).all()
+    office_counts = {
+        o.id: Officer.query.filter_by(office_id=o.id, is_active=True).count() for o in offices
+    }
+    unassigned_count = Officer.query.filter_by(office_id=None, is_active=True).count()
+    return render_template('student/offices.html', offices=offices,
+                           office_counts=office_counts, unassigned_count=unassigned_count)
+
+
 @student_bp.route('/officers')
 @login_required
 def officer_list():
-    officers = Officer.query.filter_by(is_active=True).all()
+    office_id = request.args.get('office_id', type=int)
+    office    = None
+    query     = Officer.query.filter_by(is_active=True)
+
+    if office_id:
+        office = db.session.get(Office, office_id)
+        if not office:
+            from flask import abort
+            abort(404)
+        query = query.filter_by(office_id=office_id)
+    elif 'office' in request.args:
+        # "office=none" means the "Unassigned / General" bucket from the offices page
+        query = query.filter_by(office_id=None)
+
+    officers = query.all()
     today    = datetime.now(timezone.utc).date()
-    return render_template('student/officers.html', officers=officers, today=today)
+    return render_template('student/officers.html', officers=officers, today=today, office=office)
 
 
 @student_bp.route('/officer/<int:officer_id>')
