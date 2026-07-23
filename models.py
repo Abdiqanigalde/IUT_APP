@@ -49,6 +49,19 @@ class PasswordResetToken(db.Model):
     user        = db.relationship('User', backref='reset_tokens')
 
 
+class Office(db.Model):
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(150), nullable=False, unique=True)
+    description = db.Column(db.String(255), nullable=True)
+    icon        = db.Column(db.String(50), nullable=True)   # FontAwesome class, e.g. "fa-user-tie"
+    created_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    officers    = db.relationship('Officer', backref='office', lazy=True)
+
+    def active_officer_count(self):
+        return sum(1 for o in self.officers if o.is_active)
+
+
 class Officer(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     name            = db.Column(db.String(100), nullable=False)
@@ -64,6 +77,7 @@ class Officer(db.Model):
     daily_limit     = db.Column(db.Integer, default=0)
     recurring_off_days = db.Column(db.String(20), default="")
     avg_appointment_duration = db.Column(db.Integer, default=15)
+    office_id       = db.Column(db.Integer, db.ForeignKey('office.id'), nullable=True)
 
     unavailabilities = db.relationship(
         'OfficerUnavailability', backref='officer', lazy=True, cascade='all, delete-orphan'
