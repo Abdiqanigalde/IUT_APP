@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, Response, jsonify
 from flask_login import login_required, current_user
-from models import db, Appointment, User, Officer, Notification, OfficerUnavailability, AuditLog, OfficerWorkingHours, GlobalHoliday
-from forms import OfficerForm, UnavailabilityForm, WorkingHoursForm, RejectNoteForm, OfficerProfileForm
+from models import db, Appointment, User, Officer, Notification, OfficerUnavailability, AuditLog, OfficerWorkingHours, GlobalHoliday, Office
+from forms import OfficerForm, UnavailabilityForm, WorkingHoursForm, RejectNoteForm, OfficerProfileForm, OfficeForm
 from datetime import datetime, timedelta, timezone
 import csv, io
 from flask_bcrypt import Bcrypt as _Bcrypt
@@ -252,6 +252,7 @@ def student_detail(user_id):
 @admin_required
 def manage_officers():
     form = OfficerProfileForm()
+    form.office.choices = [(0, '-- No Office --')] + [(o.id, o.name) for o in Office.query.order_by(Office.name).all()]
     if form.validate_on_submit():
         if User.query.filter_by(email=form.login_email.data).first():
             flash('Login email already in use. Choose a different one.', 'danger')
@@ -267,6 +268,7 @@ def manage_officers():
             db.session.flush()
             officer = Officer(
                 name=form.name.data, designation=form.designation.data,
+                office_id=form.office.data if form.office.data else None,
                 bio=form.bio.data, handles=form.handles.data,
                 email=form.login_email.data, room=form.room.data,
                 photo_url=form.photo_url.data if form.photo_url.data else None,
@@ -279,8 +281,9 @@ def manage_officers():
             flash(f'Officer added! Login: {form.login_email.data} / Password: {form.login_password.data}', 'success')
             return redirect(url_for('admin.manage_officers'))
     officers = Officer.query.all()
+    offices  = Office.query.order_by(Office.name).all()
     today    = datetime.now(timezone.utc).date()
-    return render_template('admin/officers.html', officers=officers, form=form, today=today)
+    return render_template('admin/officers.html', officers=officers, offices=offices, form=form, today=today)
 
 
 @admin_bp.route('/admin/officer/delete/<int:officer_id>')
@@ -325,6 +328,8 @@ def edit_officer(officer_id):
 
     officer.name        = request.form.get('edit_name',        officer.name).strip()
     officer.designation = request.form.get('edit_designation', officer.designation).strip()
+    edit_office_id       = request.form.get('edit_office_id', '')
+    officer.office_id    = int(edit_office_id) if edit_office_id else None
     officer.handles     = request.form.get('edit_handles',     officer.handles or '').strip()
     officer.room        = request.form.get('edit_room',        officer.room or '').strip()
     officer.photo_url   = request.form.get('edit_photo_url',   officer.photo_url or '').strip()
@@ -337,6 +342,69 @@ def edit_officer(officer_id):
     log_action('officer_updated', f"Updated officer profile: {officer.name}")
     flash(f'{officer.name} updated successfully.', 'success')
     return redirect(url_for('admin.manage_officers'))
+
+
+# ── Offices ───────────────────────────────────────────────────────────────────
+@admin_bp.route('/admin/offices', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_offices():
+    form = OfficeForm()
+    if form.validate_on_submit():
+        if Office.query.filter_by(name=form.name.data).first():
+            flash('An office with that name already exists.', 'danger')
+        else:
+            office = Office(name=form.name.data, description=form.description.data,
+                             icon=form.icon.data or None)
+            db.session.add(office)
+            db.session.commit()
+            log_action('office_added', f"Added office: {office.name}")
+            flash(f'Office "{office.name}" created.', 'success')
+            return redirect(url_for('admin.manage_offices'))
+    offices = Office.query.order_by(Office.name).all()
+    return render_template('admin/offices.html', offices=offices, form=form)
+
+
+@admin_bp.route('/admin/offices/<int:office_id>/edit', methods=['POST'])
+@login_required
+@admin_required
+def edit_office(office_id):
+    office = db.session.get(Office, office_id)
+    if not office:
+        flash('Office not found.', 'danger')
+        return redirect(url_for('admin.manage_offices'))
+
+    new_name = request.form.get('edit_name', office.name).strip()
+    if new_name != office.name and Office.query.filter_by(name=new_name).first():
+        flash('Another office already has that name.', 'danger')
+        return redirect(url_for('admin.manage_offices'))
+
+    office.name        = new_name
+    office.description = request.form.get('edit_description', office.description or '').strip()
+    office.icon        = request.form.get('edit_icon', office.icon or '').strip() or None
+
+    db.session.commit()
+    log_action('office_updated', f"Updated office: {office.name}")
+    flash(f'Office "{office.name}" updated.', 'success')
+    return redirect(url_for('admin.manage_offices'))
+
+
+@admin_bp.route('/admin/offices/<int:office_id>/delete')
+@login_required
+@admin_required
+def delete_office(office_id):
+    office = db.session.get(Office, office_id)
+    if not office:
+        flash('Office not found.', 'danger')
+        return redirect(url_for('admin.manage_offices'))
+
+    officer_count = Officer.query.filter_by(office_id=office_id).count()
+    Officer.query.filter_by(office_id=office_id).update({'office_id': None})
+    log_action('office_deleted', f'Deleted office: {office.name} — {officer_count} officer(s) unassigned')
+    db.session.delete(office)
+    db.session.commit()
+    flash(f'Office removed. {officer_count} officer(s) were unassigned (not deleted).', 'success')
+    return redirect(url_for('admin.manage_offices'))
 
 # ── Working hours ─────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/officer/<int:officer_id>/hours', methods=['GET', 'POST'])
