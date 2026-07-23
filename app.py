@@ -320,10 +320,11 @@ with app.app_context():
     except Exception as _holiday_err:
         print(f'[IUT] global_holiday migration error (non-fatal): {_holiday_err}')
 
-    # ── Office table + Officer.office_id migration ─────────────────────────────
+    # ── Office table + column self-heal migration ───────────────────────────────
     try:
         from sqlalchemy import text, inspect as sa_inspect6
         from models import Office
+
         inspector6  = sa_inspect6(db.engine)
         all_tables6 = inspector6.get_table_names()
 
@@ -331,52 +332,87 @@ with app.app_context():
             db.create_all()
             print('[IUT] office table created ✅')
         else:
-            print('[IUT] office table already exists — skipping.')
+            print('[IUT] office table already exists — checking columns...')
 
-        # Ensure officer.office_id column exists
-        officer_cols = {c['name'] for c in sa_inspect6(db.engine).get_columns('officer')}
-        if 'office_id' not in officer_cols:
-            is_pg6 = 'postgresql' in str(db.engine.url)
-            ref = 'REFERENCES office(id)' if is_pg6 else 'REFERENCES office(id)'
+        # Re-inspect (table may have just been created above) and add ANY
+        # column that's missing, regardless of why it's missing. This makes
+        # the migration self-healing even if the table was created earlier
+        # with an incomplete schema.
+        office_cols6 = {c['name'] for c in sa_inspect6(db.engine).get_columns('office')}
+        office_column_defs = {
+            'slug':        "VARCHAR(150)",
+            'description': "TEXT",
+            'icon':        "VARCHAR(50) DEFAULT 'fa-building'",
+            'sort_order':  "INTEGER DEFAULT 0",
+            'is_active':   "BOOLEAN DEFAULT TRUE",
+        }
+        for col_name, col_def in office_column_defs.items():
+            if col_name not in office_cols6:
+                with db.engine.connect() as conn:
+                    conn.execute(text(f'ALTER TABLE office ADD COLUMN {col_name} {col_def}'))
+                    conn.commit()
+                print(f'[IUT] office.{col_name} column added ✅')
+
+        # Backfill slug for any office rows where it's missing (NULL/empty),
+        # generating a unique slug from the office name.
+        with db.engine.connect() as conn:
+            rows = conn.execute(text('SELECT id, name, slug FROM office')).fetchall()
+            used_slugs = {row.slug for row in rows if row.slug}
+            for row in rows:
+                if not row.slug:
+                    base = ''.join(ch if ch.isalnum() else '-' for ch in (row.name or 'office').strip().lower())
+                    while '--' in base:
+                        base = base.replace('--', '-')
+                    base = base.strip('-') or 'office'
+                    new_slug, n = base, 1
+                    while new_slug in used_slugs:
+                        n += 1
+                        new_slug = f'{base}-{n}'
+                    used_slugs.add(new_slug)
+                    conn.execute(text('UPDATE office SET slug = :slug WHERE id = :id'), {'slug': new_slug, 'id': row.id})
+            conn.commit()
+        print('[IUT] office.slug backfilled where missing ✅')
+
+        officer_cols6 = {c['name'] for c in sa_inspect6(db.engine).get_columns('officer')}
+        if 'office_id' not in officer_cols6:
             with db.engine.connect() as conn:
-                conn.execute(text(f'ALTER TABLE officer ADD COLUMN office_id INTEGER {ref}'))
+                conn.execute(text('ALTER TABLE officer ADD COLUMN office_id INTEGER'))
                 conn.commit()
-            print('[IUT] officer: added office_id column ✅')
+            print('[IUT] officer.office_id column added ✅')
+        else:
+            print('[IUT] officer.office_id already exists — skipping.')
 
-        # Seed the three known offices if they don't exist yet, and backfill
-        # any existing officers into them by matching on designation keywords.
-        default_offices = [
-            ('Office of the Registrar',          'Academic records, transcripts, registration', 'fa-file-signature'),
-            ('Office of the Vice Chancellor',    'University leadership and administration',    'fa-user-tie'),
-            ('Office of the Pro Vice Chancellor','Academic affairs and student support',         'fa-user-graduate'),
-        ]
-        for off_name, off_desc, off_icon in default_offices:
-            if not Office.query.filter_by(name=off_name).first():
-                db.session.add(Office(name=off_name, description=off_desc, icon=off_icon))
-        db.session.commit()
+        # One-time seed: create a default "Office of the Registrar" and try to
+        # backfill any existing officer that doesn't have an office yet, based
+        # on simple keyword matching against their designation/room. This never
+        # overwrites an office_id that's already set.
+        if Office.query.count() == 0:
+            seed_offices = [
+                Office(name='Office of the Vice Chancellor',     slug='vc-office',     sort_order=1),
+                Office(name='Office of the Pro Vice Chancellor', slug='pro-vc-office', sort_order=2),
+                Office(name='Office of the Registrar',           slug='registrar-office', sort_order=3),
+            ]
+            db.session.add_all(seed_offices)
+            db.session.commit()
+            print('[IUT] Seeded default offices ✅')
 
-        match_rules = [
-            ('registrar',       'Office of the Registrar'),
-            ('pro vice',        'Office of the Pro Vice Chancellor'),
-            ('pro-vice',        'Office of the Pro Vice Chancellor'),
-            ('pro vc',          'Office of the Pro Vice Chancellor'),
-            ('vice chancellor', 'Office of the Vice Chancellor'),
-            ('vc',              'Office of the Vice Chancellor'),
-        ]
-        from models import Officer as _Officer
-        unassigned = _Officer.query.filter_by(office_id=None).all()
-        for officer in unassigned:
-            desig = (officer.designation or '').lower()
-            for keyword, office_name in match_rules:
-                if keyword in desig:
-                    office = Office.query.filter_by(name=office_name).first()
-                    if office:
-                        officer.office_id = office.id
-                    break
-        db.session.commit()
+            vc_off  = Office.query.filter_by(slug='vc-office').first()
+            pvc_off = Office.query.filter_by(slug='pro-vc-office').first()
+            reg_off = Office.query.filter_by(slug='registrar-office').first()
+
+            from models import Officer as _Officer
+            for off in _Officer.query.filter_by(office_id=None).all():
+                text_blob = f"{off.designation} {off.room or ''}".lower()
+                if 'pro vice chancellor' in text_blob or 'pro vc' in text_blob:
+                    off.office_id = pvc_off.id
+                elif 'vice chancellor' in text_blob or 'vc' in text_blob:
+                    off.office_id = vc_off.id
+                elif 'registrar' in text_blob:
+                    off.office_id = reg_off.id
+            db.session.commit()
+            print('[IUT] Backfilled existing officers into default offices ✅')
 
     except Exception as _office_err:
-        db.session.rollback()
         print(f'[IUT] office migration error (non-fatal): {_office_err}')
 
 
