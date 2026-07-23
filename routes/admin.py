@@ -27,45 +27,70 @@ def log_action(action, detail):
 @login_required
 @admin_required
 def dashboard():
+    from sqlalchemy import func, case
     today = datetime.now(timezone.utc).date()
 
-    total     = Appointment.query.count()
-    pending   = Appointment.query.filter_by(status='Pending').count()
-    approved  = Appointment.query.filter_by(status='Approved').count()
-    completed = Appointment.query.filter_by(status='Completed').count()
-    rejected  = Appointment.query.filter_by(status='Rejected').count()
-    cancelled = Appointment.query.filter_by(status='Cancelled').count()
+    # Status counts — was 6 separate COUNT() queries, now 1 grouped query.
+    status_rows = db.session.query(Appointment.status, func.count(Appointment.id))\
+        .group_by(Appointment.status).all()
+    status_map = {status: cnt for status, cnt in status_rows}
+    total     = sum(status_map.values())
+    pending   = status_map.get('Pending', 0)
+    approved  = status_map.get('Approved', 0)
+    completed = status_map.get('Completed', 0)
+    rejected  = status_map.get('Rejected', 0)
+    cancelled = status_map.get('Cancelled', 0)
 
     total_students  = User.query.filter_by(role='student').count()
     active_students = User.query.filter_by(role='student', is_active=True).count()
 
     today_schedule = Appointment.query.filter_by(date=today).order_by(Appointment.time).all()
 
+    # Last 7 days — was 7 separate COUNT() queries, now 1 grouped query.
+    week_start = today - timedelta(days=6)
+    daily_rows = db.session.query(Appointment.date, func.count(Appointment.id))\
+        .filter(Appointment.date >= week_start, Appointment.date <= today)\
+        .group_by(Appointment.date).all()
+    daily_map = {d: cnt for d, cnt in daily_rows}
     weekly = []
     for i in range(6, -1, -1):
         d = today - timedelta(days=i)
-        cnt = Appointment.query.filter(Appointment.date == d).count()
-        weekly.append({'date': d.strftime('%a %d'), 'count': cnt})
+        weekly.append({'date': d.strftime('%a %d'), 'count': daily_map.get(d, 0)})
 
+    # This year, by month — was 12 separate COUNT() queries, now 1 grouped query.
+    month_rows = db.session.query(
+        func.extract('month', Appointment.date),
+        func.count(Appointment.id)
+    ).filter(func.extract('year', Appointment.date) == today.year)\
+     .group_by(func.extract('month', Appointment.date)).all()
+    month_map = {int(m): cnt for m, cnt in month_rows}
     months_data = []
     for m in range(1, 13):
-        cnt = Appointment.query.filter(
-            db.extract('month', Appointment.date) == m,
-            db.extract('year',  Appointment.date) == today.year
-        ).count()
-        months_data.append({'label': datetime(today.year, m, 1).strftime('%b'), 'count': cnt})
+        months_data.append({'label': datetime(today.year, m, 1).strftime('%b'), 'count': month_map.get(m, 0)})
 
+    # Per-officer stats — was up to 4×N separate COUNT() queries, now 1 grouped query.
     all_officers = Officer.query.all()
-    officer_names  = [o.name for o in all_officers]
-    officer_counts = [Appointment.query.filter_by(officer_id=o.id).count() for o in all_officers]
+    officer_names = [o.name for o in all_officers]
+
+    officer_rows = db.session.query(
+        Appointment.officer_id,
+        func.count(Appointment.id),
+        func.sum(case((Appointment.status == 'Approved', 1), else_=0)),
+        func.sum(case((Appointment.status == 'Completed', 1), else_=0)),
+        func.sum(case((Appointment.status == 'Rejected', 1), else_=0)),
+    ).group_by(Appointment.officer_id).all()
+    officer_stat_map = {
+        oid: {'total': tot, 'approved': appr or 0, 'completed': comp or 0, 'rejected': rej or 0}
+        for oid, tot, appr, comp, rej in officer_rows
+    }
+
+    officer_counts = []
     officer_stats  = []
     for o in all_officers:
-        tot  = Appointment.query.filter_by(officer_id=o.id).count()
-        appr = Appointment.query.filter_by(officer_id=o.id, status='Approved').count()
-        comp = Appointment.query.filter_by(officer_id=o.id, status='Completed').count()
-        rej  = Appointment.query.filter_by(officer_id=o.id, status='Rejected').count()
-        officer_stats.append({'name': o.name, 'total': tot, 'approved': appr,
-                               'completed': comp, 'rejected': rej})
+        s = officer_stat_map.get(o.id, {'total': 0, 'approved': 0, 'completed': 0, 'rejected': 0})
+        officer_counts.append(s['total'])
+        officer_stats.append({'name': o.name, 'total': s['total'], 'approved': s['approved'],
+                               'completed': s['completed'], 'rejected': s['rejected']})
 
     status_counts = {'Pending': pending, 'Approved': approved,
                      'Completed': completed, 'Rejected': rejected, 'Cancelled': cancelled}
