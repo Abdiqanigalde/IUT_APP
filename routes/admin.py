@@ -78,19 +78,51 @@ def dashboard():
         func.sum(case((Appointment.status == 'Approved', 1), else_=0)),
         func.sum(case((Appointment.status == 'Completed', 1), else_=0)),
         func.sum(case((Appointment.status == 'Rejected', 1), else_=0)),
+        func.sum(case((Appointment.status == 'Pending', 1), else_=0)),
     ).group_by(Appointment.officer_id).all()
     officer_stat_map = {
-        oid: {'total': tot, 'approved': appr or 0, 'completed': comp or 0, 'rejected': rej or 0}
-        for oid, tot, appr, comp, rej in officer_rows
+        oid: {'total': tot, 'approved': appr or 0, 'completed': comp or 0,
+              'rejected': rej or 0, 'pending': pend or 0}
+        for oid, tot, appr, comp, rej, pend in officer_rows
     }
 
-    officer_counts = []
-    officer_stats  = []
+    # Today's approved/pending load per officer, to measure capacity utilization
+    # against each officer's daily_limit (0 = unlimited).
+    today_rows = db.session.query(
+        Appointment.officer_id, func.count(Appointment.id)
+    ).filter(
+        Appointment.date == today,
+        Appointment.status.in_(['Pending', 'Approved'])
+    ).group_by(Appointment.officer_id).all()
+    today_map = {oid: cnt for oid, cnt in today_rows}
+
+    officer_counts  = []
+    officer_stats   = []
     for o in all_officers:
-        s = officer_stat_map.get(o.id, {'total': 0, 'approved': 0, 'completed': 0, 'rejected': 0})
+        s = officer_stat_map.get(o.id, {'total': 0, 'approved': 0, 'completed': 0, 'rejected': 0, 'pending': 0})
+        today_load = today_map.get(o.id, 0)
+
+        if o.daily_limit and o.daily_limit > 0:
+            utilization = round((today_load / o.daily_limit) * 100)
+        else:
+            utilization = None  # unlimited capacity — utilization isn't meaningful
+
+        if s['pending'] >= 10 or (utilization is not None and utilization >= 90):
+            workload = 'overloaded'
+        elif s['pending'] == 0 and s['total'] == 0:
+            workload = 'idle'
+        elif s['pending'] <= 2 and (utilization is None or utilization < 50):
+            workload = 'light'
+        else:
+            workload = 'balanced'
+
         officer_counts.append(s['total'])
-        officer_stats.append({'name': o.name, 'total': s['total'], 'approved': s['approved'],
-                               'completed': s['completed'], 'rejected': s['rejected']})
+        officer_stats.append({
+            'name': o.name, 'total': s['total'], 'approved': s['approved'],
+            'completed': s['completed'], 'rejected': s['rejected'], 'pending': s['pending'],
+            'today_load': today_load, 'daily_limit': o.daily_limit or 0,
+            'utilization': utilization, 'workload': workload,
+        })
 
     status_counts = {'Pending': pending, 'Approved': approved,
                      'Completed': completed, 'Rejected': rejected, 'Cancelled': cancelled}
