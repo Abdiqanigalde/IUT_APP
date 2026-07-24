@@ -71,37 +71,56 @@
   </div>
   <div class="col-lg-7">
     <div class="card h-100">
-      <div class="card-header"><span><i class="fas fa-table me-2 text-brand"></i>Officer Performance</span></div>
+      <div class="card-header"><span><i class="fas fa-table me-2 text-brand"></i>Officer Workload</span></div>
+      {% set overloaded = officer_stats | selectattr('workload', 'equalto', 'overloaded') | list %}
+      {% if overloaded %}
+      <div class="alert alert-danger mb-0 rounded-0 py-2 px-3 small">
+        <i class="fas fa-exclamation-triangle me-1"></i>
+        <strong>{{ overloaded|length }} officer{{ 's' if overloaded|length != 1 else '' }}</strong> overloaded:
+        {{ overloaded | map(attribute='name') | join(', ') }}
+      </div>
+      {% endif %}
       <div class="card-body p-0">
         <table class="table table-hover mb-0">
           <thead>
             <tr>
               <th class="ps-4">Officer</th>
+              <th class="text-center">Pending</th>
+              <th class="text-center">Today</th>
               <th class="text-center">Total</th>
-              <th class="text-center">Approved</th>
               <th class="text-center">Completed</th>
-              <th class="text-center">Rejected</th>
-              <th>Completion %</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
-          {% for o in officer_stats %}
-          <tr>
+          {% for o in officer_stats | sort(attribute='pending', reverse=true) %}
+          <tr {% if o.workload == 'overloaded' %}style="background:rgba(220,53,69,.06);"{% endif %}>
             <td class="ps-4 fw-600">{{ o.name }}</td>
-            <td class="text-center fw-bold">{{ o.total }}</td>
-            <td class="text-center" style="color:var(--success);font-weight:700;">{{ o.approved }}</td>
-            <td class="text-center" style="color:var(--brand);font-weight:700;">{{ o.completed }}</td>
-            <td class="text-center" style="color:var(--danger);font-weight:700;">{{ o.rejected }}</td>
-            <td>
-              {% if o.total > 0 %}
-                {% set rate = ((o.completed / o.total) * 100)|round|int %}
-                <div class="d-flex align-items-center gap-2">
-                  <div class="progress flex-fill" style="height:5px;">
-                    <div class="progress-bar bg-primary" style="width:{{ rate }}%"></div>
-                  </div>
-                  <span style="font-size:.75rem;font-weight:700;min-width:32px;color:var(--text-muted);">{{ rate }}%</span>
+            <td class="text-center">
+              <span class="fw-bold" style="color:{{ 'var(--danger)' if o.pending >= 10 else ('var(--warning, #d97706)' if o.pending >= 5 else 'inherit') }};">{{ o.pending }}</span>
+            </td>
+            <td class="text-center">
+              {% if o.daily_limit > 0 %}
+                {{ o.today_load }}/{{ o.daily_limit }}
+                <div class="progress mt-1" style="height:4px;">
+                  <div class="progress-bar {{ 'bg-danger' if o.utilization >= 90 else ('bg-warning' if o.utilization >= 60 else 'bg-success') }}" style="width:{{ [o.utilization, 100] | min }}%"></div>
                 </div>
-              {% else %}—{% endif %}
+              {% else %}
+                {{ o.today_load }} <span class="text-muted" style="font-size:.7rem;">(unlimited)</span>
+              {% endif %}
+            </td>
+            <td class="text-center fw-bold">{{ o.total }}</td>
+            <td class="text-center" style="color:var(--brand);font-weight:700;">{{ o.completed }}</td>
+            <td>
+              {% if o.workload == 'overloaded' %}
+                <span class="badge bg-danger">Overloaded</span>
+              {% elif o.workload == 'idle' %}
+                <span class="badge bg-secondary">No activity</span>
+              {% elif o.workload == 'light' %}
+                <span class="badge" style="background:#0ea5e9;">Light load</span>
+              {% else %}
+                <span class="badge bg-success">Balanced</span>
+              {% endif %}
             </td>
           </tr>
           {% else %}
