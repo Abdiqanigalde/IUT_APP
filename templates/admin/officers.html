@@ -122,6 +122,11 @@
                 <i class="fas fa-tags me-1"></i>{{ officer.handles[:60] }}{% if officer.handles|length > 60 %}…{% endif %}
               </small>
               {% endif %}
+              {% if officer.handles_referred_exam %}
+              <br><span class="badge bg-purple text-white border" style="font-size:.7rem;background:#8b5cf6!important;">
+                <i class="fas fa-file-signature me-1"></i>Referred Exam Officer
+              </span>
+              {% endif %}
             </td>
             <td class="small">
               {% if officer.email %}
@@ -154,7 +159,8 @@
                   data-work-start="{{ officer.work_start or '08:00' }}"
                   data-work-end="{{ officer.work_end or '17:00' }}"
                   data-daily-limit="{{ officer.daily_limit }}"
-                  data-is-active="{{ '1' if officer.is_active else '0' }}">
+                  data-is-active="{{ '1' if officer.is_active else '0' }}"
+                  data-handles-referred-exam="{{ '1' if officer.handles_referred_exam else '0' }}">
                   <i class="fas fa-edit"></i>
                 </button>
                 <!-- Working Hours -->
@@ -257,6 +263,17 @@
                 <option value="0">Inactive</option>
               </select>
             </div>
+            <div class="col-12"><hr class="my-0"></div>
+            <div class="col-12">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="editHandlesReferredExam" name="edit_handles_referred_exam" value="1">
+                <label class="form-check-label small fw-semibold" for="editHandlesReferredExam">
+                  <i class="fas fa-file-signature me-1 text-purple" style="color:#8b5cf6;"></i>
+                  Handles Referred Exam Registration
+                </label>
+                <div class="text-muted small">Only one officer should be flagged — students booking a referred exam registration are routed to them.</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -301,6 +318,7 @@ document.querySelectorAll('.btn-edit-officer').forEach(function(btn) {
     document.getElementById('editWorkEnd').value      = d.workEnd;
     document.getElementById('editDailyLimit').value  = d.dailyLimit;
     document.getElementById('editIsActive').value    = d.isActive;
+    document.getElementById('editHandlesReferredExam').checked = d.handlesReferredExam === '1';
     document.getElementById('editOfficerForm').action = '/admin/officers/' + d.id + '/edit';
 
     var modalEl = document.getElementById('editOfficerModal');
