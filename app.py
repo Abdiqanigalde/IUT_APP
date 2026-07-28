@@ -415,6 +415,42 @@ with app.app_context():
     except Exception as _office_err:
         print(f'[IUT] office migration error (non-fatal): {_office_err}')
 
+    # ── Referred Exam Registration: table + officer flag self-heal ─────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect7
+        from models import Officer as _Officer7, ReferredExamRegistration as _RER7
+
+        inspector7  = sa_inspect7(db.engine)
+        all_tables7 = inspector7.get_table_names()
+
+        if 'referred_exam_registration' not in all_tables7:
+            db.create_all()
+            print('[IUT] referred_exam_registration table created ✅')
+
+        officer_cols7 = {c['name'] for c in sa_inspect7(db.engine).get_columns('officer')}
+        if 'handles_referred_exam' not in officer_cols7:
+            with db.engine.connect() as conn:
+                conn.execute(text('ALTER TABLE officer ADD COLUMN handles_referred_exam BOOLEAN DEFAULT FALSE'))
+                conn.commit()
+            print('[IUT] officer.handles_referred_exam column added ✅')
+        else:
+            print('[IUT] officer.handles_referred_exam already exists — skipping.')
+
+        # One-time auto-detect: if no officer is flagged yet, try to match
+        # "Md. Enamul Hoque" by name so the feature works out of the box.
+        # This never overwrites a flag an admin has already set.
+        if not _Officer7.query.filter_by(handles_referred_exam=True).first():
+            candidate = _Officer7.query.filter(
+                _Officer7.name.ilike('%enamul hoque%')
+            ).first()
+            if candidate:
+                candidate.handles_referred_exam = True
+                db.session.commit()
+                print(f'[IUT] Auto-flagged "{candidate.name}" as the referred exam officer ✅')
+
+    except Exception as _rer_err:
+        print(f'[IUT] referred exam migration error (non-fatal): {_rer_err}')
+
     # ── Performance indexes on existing tables ──────────────────────────────────
     # create_all() only creates indexes for brand-new tables — these tables
     # already existed, so we add the indexes explicitly. IF NOT EXISTS makes
@@ -435,6 +471,16 @@ with app.app_context():
         print('[IUT] Performance indexes verified/created ✅')
     except Exception as _index_err:
         print(f'[IUT] index migration error (non-fatal): {_index_err}')
+
+
+# ── Nav context (lets layout.html show officer-specific links) ───────────────
+@app.context_processor
+def inject_nav_context():
+    nav_officer_record = None
+    if current_user.is_authenticated and current_user.role == 'officer':
+        from models import Officer
+        nav_officer_record = Officer.query.filter_by(email=current_user.email).first()
+    return dict(nav_officer_record=nav_officer_record)
 
 
 # ── Session timeout ───────────────────────────────────────────────────────────
@@ -530,6 +576,7 @@ from routes.admin       import admin_bp
 from routes.officer     import officer_bp
 from routes.super_admin import super_admin_bp
 from routes.visa        import visa_bp
+from routes.referred_exam import referred_exam_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(student_bp)
@@ -537,6 +584,7 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(officer_bp)
 app.register_blueprint(super_admin_bp)
 app.register_blueprint(visa_bp)
+app.register_blueprint(referred_exam_bp)
 
 limiter.limit("10 per minute")(auth_bp)
 
