@@ -82,6 +82,7 @@ class Officer(db.Model):
     daily_limit     = db.Column(db.Integer, default=0)
     recurring_off_days = db.Column(db.String(20), default="")
     avg_appointment_duration = db.Column(db.Integer, default=15)
+    handles_referred_exam = db.Column(db.Boolean, default=False)
 
     unavailabilities = db.relationship(
         'OfficerUnavailability', backref='officer', lazy=True, cascade='all, delete-orphan'
@@ -285,3 +286,56 @@ class GlobalHoliday(db.Model):
 
     def is_active_on(self, date):
         return self.start_date <= date <= self.end_date
+
+
+class ReferredExamRegistration(db.Model):
+    """Online 'referred exam' course registration request. In real life the
+    student used to collect a paper form from the registration officer,
+    write down up to 3 courses, get it signed, and hand it back. This model
+    lets the student submit that request online; the officer processes it
+    and marks it 'Ready', which notifies the student to come collect the
+    signed paper."""
+    __tablename__ = 'referred_exam_registration'
+
+    id              = db.Column(db.Integer, primary_key=True)
+    user_id         = db.Column(db.Integer, db.ForeignKey('user.id'),    nullable=False, index=True)
+    officer_id      = db.Column(db.Integer, db.ForeignKey('officer.id'), nullable=True,  index=True)
+
+    student_name    = db.Column(db.String(100), nullable=False)
+    student_id_num  = db.Column(db.String(50),  nullable=False)
+    department      = db.Column(db.String(100), nullable=False)
+
+    course1_code    = db.Column(db.String(30),  nullable=False)
+    course1_title   = db.Column(db.String(150), nullable=True)
+    course2_code    = db.Column(db.String(30),  nullable=True)
+    course2_title   = db.Column(db.String(150), nullable=True)
+    course3_code    = db.Column(db.String(30),  nullable=True)
+    course3_title   = db.Column(db.String(150), nullable=True)
+
+    status          = db.Column(db.String(20), nullable=False, default='Pending', index=True)
+    officer_note    = db.Column(db.Text, nullable=True)
+
+    created_at      = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at      = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    user    = db.relationship('User',    backref='referred_exam_registrations')
+    officer = db.relationship('Officer', backref='referred_exam_registrations')
+
+    def course_list(self):
+        """Returns the non-empty (code, title) pairs the student registered."""
+        courses = []
+        for code, title in (
+            (self.course1_code, self.course1_title),
+            (self.course2_code, self.course2_title),
+            (self.course3_code, self.course3_title),
+        ):
+            if code:
+                courses.append({'code': code, 'title': title})
+        return courses
+
+    def course_count(self):
+        return len(self.course_list())
