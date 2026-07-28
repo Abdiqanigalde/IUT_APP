@@ -434,6 +434,7 @@ def edit_officer(officer_id):
     officer.work_end    = request.form.get('edit_work_end',    officer.work_end or '17:00').strip()
     officer.daily_limit = int(request.form.get('edit_daily_limit', officer.daily_limit or 0))
     officer.is_active   = request.form.get('edit_is_active', '1') == '1'
+    officer.handles_referred_exam = request.form.get('edit_handles_referred_exam') == '1'
 
     office_note = ' (no office assigned)'
     if officer.office_id:
