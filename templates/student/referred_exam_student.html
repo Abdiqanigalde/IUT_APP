@@ -1,0 +1,300 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .re-hero {
+    background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 60%, #6d28d9 100%);
+    border-radius: 16px;
+    padding: 40px 36px 32px;
+    color: white;
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .re-hero::before {
+    content: '📄';
+    position: absolute;
+    right: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 6rem;
+    opacity: 0.15;
+  }
+  .re-hero h2 { font-weight: 800; font-size: 1.8rem; margin-bottom: 6px; }
+  .re-hero p { opacity: 0.85; margin: 0; font-size: 1rem; }
+
+  .step-card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.07);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .step-header {
+    background: linear-gradient(90deg, #4c1d95, #7c3aed);
+    color: white;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .step-num {
+    width: 32px; height: 32px;
+    background: rgba(255,255,255,.2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .9rem; flex-shrink: 0;
+  }
+  .step-header h5 { margin: 0; font-weight: 600; font-size: 1rem; }
+  .step-body { padding: 20px 24px; background: white; }
+
+  .status-banner {
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .status-banner.pending   { background: #fff8e1; border-left: 5px solid #f59e0b; }
+  .status-banner.ready     { background: #f5f3ff; border-left: 5px solid #7c3aed; }
+  .status-banner.collected { background: #e8f5e9; border-left: 5px solid #22c55e; }
+  .status-banner.rejected  { background: #fef2f2; border-left: 5px solid #ef4444; }
+  .status-icon { font-size: 1.8rem; flex-shrink: 0; }
+  .status-banner .status-title { font-weight: 700; font-size: 1rem; margin-bottom: 2px; }
+  .status-banner .status-sub   { font-size: .85rem; color: #6b7280; margin: 0; }
+  .status-banner .status-note  { font-size: .85rem; margin-top: 6px; padding: 8px 12px;
+                                  background: rgba(0,0,0,.05); border-radius: 6px; }
+
+  .course-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr auto;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  @media (max-width: 576px) { .course-row { grid-template-columns: 1fr; } }
+  .course-row .course-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #ede9fe; color: #5b21b6; font-weight: 700; font-size: .75rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .submit-btn {
+    background: linear-gradient(135deg, #4c1d95, #7c3aed);
+    color: white; border: none; border-radius: 10px;
+    padding: 12px 28px; font-size: .95rem; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: opacity .2s, transform .2s; cursor: pointer;
+    margin-top: 12px;
+  }
+  .submit-btn:hover { opacity: .9; transform: translateY(-1px); }
+
+  .course-list {
+    margin-top: 12px;
+  }
+  .course-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 10px;
+    margin-bottom: 8px; background: white;
+  }
+  .course-item .course-code { font-weight: 700; color: #4c1d95; }
+  .course-item .course-title { color: #6b7280; font-size: .85rem; }
+</style>
+
+<!-- Hero -->
+<div class="re-hero">
+  <h2><i class="fas fa-file-signature me-2"></i>Referred Exam Registration</h2>
+  <p>Register up to 3 courses for your referred exam online — no more paper forms.</p>
+</div>
+
+{% if not officer %}
+<div class="alert alert-warning">
+  <i class="fas fa-exclamation-triangle me-2"></i>
+  The referred exam registration officer hasn't been configured yet. Please contact an administrator, or reach out to the Office of the Registrar directly.
+</div>
+{% endif %}
+
+{% if registration %}
+  {% if registration.status == 'Pending' %}
+  <div class="status-banner pending">
+    <div class="status-icon">⏳</div>
+    <div>
+      <div class="status-title">Registration Submitted — Awaiting Processing</div>
+      <p class="status-sub">
+        {{ officer.name if officer else 'The registration officer' }} is reviewing your course selection and getting the required sign-offs. You'll be notified when it's ready to collect.
+      </p>
+    </div>
+  </div>
+  {% elif registration.status == 'Ready' %}
+  <div class="status-banner ready">
+    <div class="status-icon">📄</div>
+    <div>
+      <div class="status-title">Your Paper Is Ready — Come Collect It!</div>
+      <p class="status-sub">
+        Visit {{ registration.officer.name if registration.officer else 'the registration officer' }}{% if registration.officer and registration.officer.room %} at {{ registration.officer.room }}{% endif %} to pick up your signed registration.
+      </p>
+      {% if registration.officer_note %}<div class="status-note"><strong>Note:</strong> {{ registration.officer_note }}</div>{% endif %}
+    </div>
+  </div>
+  {% elif registration.status == 'Collected' %}
+  <div class="status-banner collected">
+    <div class="status-icon">✅</div>
+    <div>
+      <div class="status-title">Collected</div>
+      <p class="status-sub">This registration has been collected. You can submit a new registration below if needed for another referred exam.</p>
+    </div>
+  </div>
+  {% elif registration.status == 'Rejected' %}
+  <div class="status-banner rejected">
+    <div class="status-icon">❌</div>
+    <div>
+      <div class="status-title">Registration Rejected</div>
+      <p class="status-sub">Please review the note below, correct your submission, and resubmit.</p>
+      {% if registration.officer_note %}<div class="status-note"><strong>Reason:</strong> {{ registration.officer_note }}</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if registration.status in ('Pending', 'Ready') %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header fw-semibold" style="background:#f8f9fa;">
+      <i class="fas fa-list-check me-2 text-primary"></i>Courses Submitted
+    </div>
+    <div class="card-body">
+      <div class="course-list">
+        {% for c in registration.course_list() %}
+        <div class="course-item">
+          <div><span class="course-code">{{ c.code }}</span>{% if c.title %} <span class="course-title">— {{ c.title }}</span>{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-8">
+
+    <!-- Step 1: How it works -->
+    <div class="step-card card">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <h5>How Referred Exam Registration Works</h5>
+      </div>
+      <div class="step-body">
+        <p class="text-muted small mb-2">This replaces the old paper process:</p>
+        <ol class="small text-muted mb-0" style="line-height:1.9;">
+          <li>Pick the courses you're sitting for the referred exam — up to 3.</li>
+          <li>Submit the form below. It goes straight to the registration officer.</li>
+          <li>The officer processes it and gets the required sign-offs done.</li>
+          <li>You'll get a notification (and email) the moment it's ready — then just come collect it.</li>
+        </ol>
+      </div>
+    </div>
+
+    {% if not registration or registration.status not in ('Pending', 'Ready') %}
+    <!-- Step 2: Submit form -->
+    <div class="step-card card">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <h5>{% if registration and registration.status == 'Rejected' %}Resubmit Your Registration{% else %}Submit Your Registration{% endif %}</h5>
+      </div>
+      <div class="step-body">
+        <form method="POST" action="{{ url_for('referred_exam.submit') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Full Name</label>
+              <input type="text" name="student_name" class="form-control form-control-sm"
+                     value="{{ registration.student_name if registration else current_user.name }}" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Student ID</label>
+              <input type="text" name="student_id_num" class="form-control form-control-sm"
+                     value="{{ registration.student_id_num if registration else (current_user.student_id_num or '') }}" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Department</label>
+              <input type="text" name="department" class="form-control form-control-sm"
+                     value="{{ registration.department if registration else (current_user.department or '') }}" required>
+            </div>
+          </div>
+
+          <label class="form-label small fw-semibold">Courses (up to 3) <span class="text-danger">*</span></label>
+          <div class="course-row">
+            <div class="course-num">1</div>
+            <input type="text" name="course1_title" class="form-control form-control-sm" placeholder="Course title (optional)"
+                   value="{{ registration.course1_title if registration else '' }}">
+            <input type="text" name="course1_code" class="form-control form-control-sm" placeholder="Course code *"
+                   value="{{ registration.course1_code if registration else '' }}" required style="max-width:140px;">
+          </div>
+          <div class="course-row">
+            <div class="course-num">2</div>
+            <input type="text" name="course2_title" class="form-control form-control-sm" placeholder="Course title (optional)"
+                   value="{{ registration.course2_title if registration else '' }}">
+            <input type="text" name="course2_code" class="form-control form-control-sm" placeholder="Course code"
+                   value="{{ registration.course2_code if registration else '' }}" style="max-width:140px;">
+          </div>
+          <div class="course-row">
+            <div class="course-num">3</div>
+            <input type="text" name="course3_title" class="form-control form-control-sm" placeholder="Course title (optional)"
+                   value="{{ registration.course3_title if registration else '' }}">
+            <input type="text" name="course3_code" class="form-control form-control-sm" placeholder="Course code"
+                   value="{{ registration.course3_code if registration else '' }}" style="max-width:140px;">
+          </div>
+          <p class="text-muted small mt-1 mb-0"><i class="fas fa-info-circle me-1"></i>Maximum 3 courses per referred exam.</p>
+
+          <button type="submit" class="submit-btn">
+            <i class="fas fa-paper-plane"></i> Submit Registration
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header fw-semibold" style="background:#f8f9fa;">
+        <i class="fas fa-user-tie me-2 text-primary"></i>Registration Officer
+      </div>
+      <div class="card-body">
+        {% if officer %}
+          <div class="d-flex align-items-center gap-3 mb-2">
+            {% if officer.photo_display_url() %}
+              <img src="{{ officer.photo_display_url() }}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover;">
+            {% else %}
+              <div style="width:48px;height:48px;border-radius:50%;background:#ede9fe;display:flex;align-items:center;justify-content:center;">
+                <i class="fas fa-user" style="color:#7c3aed;"></i>
+              </div>
+            {% endif %}
+            <div>
+              <div class="fw-bold">{{ officer.name }}</div>
+              <div class="text-muted small">{{ officer.designation }}</div>
+            </div>
+          </div>
+          {% if officer.office %}<p class="small mb-1"><i class="fas fa-building me-2 text-muted"></i>{{ officer.office.name }}</p>{% endif %}
+          {% if officer.room %}<p class="small mb-1"><i class="fas fa-map-marker-alt me-2 text-muted"></i>{{ officer.room }}</p>{% endif %}
+          <p class="small mb-0"><i class="fas fa-clock me-2 text-muted"></i>{{ officer.work_start }} – {{ officer.work_end }}</p>
+        {% else %}
+          <p class="text-muted small mb-0">Not yet configured. Contact an administrator.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold" style="background:#f8f9fa;">
+        <i class="fas fa-circle-info me-2 text-info"></i>Good to Know
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-0">
+          You'll need to physically collect the signed paper once it's marked "Ready" — this form only replaces the initial paperwork and course selection step.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
