@@ -1,0 +1,257 @@
+"""
+Referred Exam Registration blueprint.
+
+Digitizes the paper-based "referred exam" course registration process:
+  1. Student fills in up to 3 courses online and submits.
+  2. Md. Enamul Hoque (the officer flagged `handles_referred_exam` on the
+     Officer table, under the Office of the Registrar) reviews it, gets the
+     required sign-offs done on his end, and marks it "Ready".
+  3. The student gets notified (in-app + email) that their paper is ready
+     to collect.
+"""
+from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask_login import login_required, current_user
+from models import db, ReferredExamRegistration, Officer, Notification, User
+from datetime import datetime, timezone
+
+referred_exam_bp = Blueprint('referred_exam', __name__)
+
+ACTIVE_STATUSES = ('Pending', 'Ready')
+
+
+def get_referred_exam_officer():
+    """The officer currently responsible for processing referred exam
+    registrations (flagged by an admin on their officer profile)."""
+    return Officer.query.filter_by(handles_referred_exam=True, is_active=True).first()
+
+
+def get_officer_record_for(user):
+    return Officer.query.filter_by(email=user.email).first()
+
+
+def send_referred_exam_email(student, status, note='', officer=None):
+    """Email the student when their referred exam registration status changes."""
+    try:
+        from utils import send_email
+
+        if status == 'Ready':
+            subject = '📄 Your Referred Exam Paper Is Ready — IUT'
+            officer_line = f' from <strong>{officer.name}</strong> ({officer.room or "office"})' if officer else ''
+            body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:linear-gradient(135deg,#6d28d9,#8b5cf6);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
+                <h1 style="color:white;margin:0;font-size:1.6rem;">📄 Your Paper Is Ready!</h1>
+              </div>
+              <div style="background:#f9fafb;padding:28px;border-radius:0 0 12px 12px;border:1px solid #e5e7eb;">
+                <p style="font-size:1rem;color:#374151;">Dear <strong>{student.name}</strong>,</p>
+                <p style="color:#374151;">Your referred exam registration has been processed and signed off. Please come collect it{officer_line}.</p>
+                {"<div style='background:#f5f3ff;border-left:4px solid #8b5cf6;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Note:</strong> " + note + "</div>" if note else ""}
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+                <p style="color:#9ca3af;font-size:.82rem;text-align:center;">IUT University Appointment Management System</p>
+              </div>
+            </div>
+            """
+        elif status == 'Rejected':
+            subject = '❌ Referred Exam Registration Needs Correction — IUT'
+            body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:linear-gradient(135deg,#991b1b,#dc2626);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
+                <h1 style="color:white;margin:0;font-size:1.6rem;">❌ Registration Rejected</h1>
+              </div>
+              <div style="background:#f9fafb;padding:28px;border-radius:0 0 12px 12px;border:1px solid #e5e7eb;">
+                <p style="font-size:1rem;color:#374151;">Dear <strong>{student.name}</strong>,</p>
+                <p style="color:#374151;">Your referred exam registration has been <strong style="color:#dc2626;">rejected</strong>.</p>
+                {"<div style='background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Reason:</strong> " + note + "</div>" if note else ""}
+                <p style="color:#374151;">Please log in to review the feedback and resubmit.</p>
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+                <p style="color:#9ca3af;font-size:.82rem;text-align:center;">IUT University Appointment Management System</p>
+              </div>
+            </div>
+            """
+        else:
+            return
+
+        send_email(subject, [student.email], body)
+        print(f'[IUT] Referred exam email sent to {student.email} — {status}')
+
+    except Exception as e:
+        print(f'[IUT] Referred exam email error: {e}')
+
+
+# ── Student side ─────────────────────────────────────────────────────────────
+
+@referred_exam_bp.route('/student/referred-exam')
+@login_required
+def guide():
+    if current_user.role != 'student':
+        return redirect(url_for('index'))
+    existing = ReferredExamRegistration.query.filter_by(user_id=current_user.id)\
+                .order_by(ReferredExamRegistration.created_at.desc()).first()
+    officer = get_referred_exam_officer()
+    return render_template('student/referred_exam.html', registration=existing, officer=officer)
+
+
+@referred_exam_bp.route('/student/referred-exam/submit', methods=['POST'])
+@login_required
+def submit():
+    if current_user.role != 'student':
+        return redirect(url_for('index'))
+
+    uid = current_user.id
+    existing = ReferredExamRegistration.query.filter_by(user_id=uid)\
+                .order_by(ReferredExamRegistration.created_at.desc()).first()
+
+    if existing and existing.status in ACTIVE_STATUSES:
+        flash('You already have an active referred exam registration.', 'warning')
+        return redirect(url_for('referred_exam.guide'))
+
+    student_name   = request.form.get('student_name',   current_user.name).strip()
+    student_id_num = request.form.get('student_id_num', '').strip()
+    department     = request.form.get('department',     '').strip()
+
+    courses = []
+    for i in (1, 2, 3):
+        code  = request.form.get(f'course{i}_code',  '').strip()
+        title = request.form.get(f'course{i}_title', '').strip()
+        if code:
+            courses.append((code, title))
+
+    if not student_id_num or not department:
+        flash('Student ID and Department are required.', 'danger')
+        return redirect(url_for('referred_exam.guide'))
+
+    if not courses:
+        flash('Add at least one course to register for the referred exam.', 'danger')
+        return redirect(url_for('referred_exam.guide'))
+
+    if len(courses) > 3:
+        flash('You can register for a maximum of 3 courses.', 'danger')
+        return redirect(url_for('referred_exam.guide'))
+
+    officer = get_referred_exam_officer()
+
+    # Pad out to exactly 3 slots
+    while len(courses) < 3:
+        courses.append((None, None))
+
+    if existing and existing.status == 'Rejected':
+        record = existing
+        record.status       = 'Pending'
+        record.officer_note = None
+        record.updated_at   = datetime.now(timezone.utc)
+        flash_msg = 'Registration resubmitted successfully! The registration officer will review it.'
+    else:
+        record = ReferredExamRegistration(user_id=uid)
+        db.session.add(record)
+        flash_msg = 'Referred exam registration submitted! The registration officer will process it and notify you.'
+
+    record.student_name    = student_name
+    record.student_id_num  = student_id_num
+    record.department      = department
+    record.officer_id      = officer.id if officer else None
+    record.course1_code, record.course1_title = courses[0]
+    record.course2_code, record.course2_title = courses[1]
+    record.course3_code, record.course3_title = courses[2]
+
+    db.session.commit()
+    flash(flash_msg, 'success')
+    return redirect(url_for('referred_exam.guide'))
+
+
+# ── Officer side ─────────────────────────────────────────────────────────────
+
+def _officer_can_manage():
+    """True if the logged-in user may manage referred exam registrations —
+    either they're the flagged officer, or an admin/super_admin."""
+    if current_user.role in ('admin', 'super_admin'):
+        return True
+    if current_user.role == 'officer':
+        rec = get_officer_record_for(current_user)
+        return bool(rec and rec.handles_referred_exam)
+    return False
+
+
+@referred_exam_bp.route('/officer/referred-exam')
+@login_required
+def officer_dashboard():
+    if not _officer_can_manage():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+    registrations = ReferredExamRegistration.query\
+        .order_by(ReferredExamRegistration.created_at.desc()).all()
+    return render_template('officer/referred_exam_dashboard.html', registrations=registrations)
+
+
+@referred_exam_bp.route('/officer/referred-exam/<int:reg_id>')
+@login_required
+def detail(reg_id):
+    if not _officer_can_manage():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+    registration = db.session.get(ReferredExamRegistration, reg_id)
+    if not registration:
+        flash('Registration not found.', 'danger')
+        return redirect(url_for('referred_exam.officer_dashboard'))
+    return render_template('officer/referred_exam_detail.html', registration=registration)
+
+
+@referred_exam_bp.route('/officer/referred-exam/<int:reg_id>/update', methods=['POST'])
+@login_required
+def update_status(reg_id):
+    if not _officer_can_manage():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+
+    registration = db.session.get(ReferredExamRegistration, reg_id)
+    if not registration:
+        flash('Registration not found.', 'danger')
+        return redirect(url_for('referred_exam.officer_dashboard'))
+
+    status = request.form.get('status', '').strip()
+    note   = request.form.get('officer_note', '').strip()
+
+    if status not in ('Pending', 'Ready', 'Collected', 'Rejected'):
+        flash('Invalid status.', 'danger')
+        return redirect(url_for('referred_exam.detail', reg_id=reg_id))
+
+    prev_status = registration.status
+    registration.status       = status
+    registration.officer_note = note
+    registration.updated_at   = datetime.now(timezone.utc)
+    db.session.commit()
+
+    if status != prev_status:
+        status_msgs = {
+            'Ready':     'Your referred exam paper is ready — come collect it!',
+            'Rejected':  'Your referred exam registration was rejected.',
+            'Collected': 'Your referred exam paper has been marked as collected.',
+            'Pending':   'Your referred exam registration is pending review.',
+        }
+        db.session.add(Notification(
+            user_id = registration.user_id,
+            message = status_msgs.get(status, f'Your referred exam registration status changed to {status}.')
+                      + (f' Note: {note}' if note else '')
+        ))
+        db.session.commit()
+
+        if status in ('Ready', 'Rejected'):
+            student = db.session.get(User, registration.user_id)
+            if student:
+                send_referred_exam_email(student, status, note, officer=registration.officer)
+
+    flash(f'Registration marked {status}.', 'success')
+    return redirect(url_for('referred_exam.officer_dashboard'))
+
+
+@referred_exam_bp.route('/officer/referred-exam/<int:reg_id>/delete', methods=['POST'])
+@login_required
+def delete(reg_id):
+    if not _officer_can_manage():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+    registration = db.session.get(ReferredExamRegistration, reg_id)
+    if registration:
+        db.session.delete(registration)
+        db.session.commit()
+        flash('Registration deleted.', 'success')
+    return redirect(url_for('referred_exam.officer_dashboard'))
