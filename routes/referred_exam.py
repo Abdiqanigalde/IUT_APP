@@ -300,23 +300,40 @@ def download_pdf(reg_id):
 
     elements = []
 
-    logo_path = os.path.join(current_app.static_folder, 'iut_logo.png')
-    if os.path.exists(logo_path):
+    def _load_logo_flowable(filename, width, height):
+        path = os.path.join(current_app.static_folder, filename)
+        if not os.path.exists(path):
+            return None
         from PIL import Image as PILImage
-        logo_buf = _io.BytesIO()
-        with PILImage.open(logo_path) as pil_img:
+        buf = _io.BytesIO()
+        with PILImage.open(path) as pil_img:
             pil_img = pil_img.convert('RGBA')
             pil_img.thumbnail((280, 200))
-            pil_img.save(logo_buf, format='PNG')
-        logo_buf.seek(0)
-        logo = RLImage(logo_buf, width=56, height=40)
-        logo.hAlign = 'CENTER'
-        elements.append(logo)
-        elements.append(Spacer(1, 6))
+            pil_img.save(buf, format='PNG')
+        buf.seek(0)
+        return RLImage(buf, width=width, height=height)
 
-    elements.append(Paragraph("Islamic University of Technology (IUT)", title_style))
-    elements.append(Paragraph("Referred Exam Registration Form", sub_style))
+    iut_logo = _load_logo_flowable('iut_logo.png', 50, 36)
+    oic_logo = _load_logo_flowable('oic_logo.png', 50, 27)
+
+    header_title = [
+        Paragraph("Islamic University of Technology (IUT)", title_style),
+        Paragraph("Referred Exam Registration Form", sub_style),
+    ]
+
+    header_t = Table(
+        [[iut_logo or '', header_title, oic_logo or '']],
+        colWidths=[70, 383, 70]
+    )
+    header_t.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN',  (0, 0), (0, 0), 'LEFT'),
+        ('ALIGN',  (1, 0), (1, 0), 'CENTER'),
+        ('ALIGN',  (2, 0), (2, 0), 'RIGHT'),
+    ]))
+    elements.append(header_t)
     elements.append(Spacer(1, 4))
+
     elements.append(Paragraph(
         f"Registration #{registration.id} &nbsp;|&nbsp; Status: {registration.status} "
         f"&nbsp;|&nbsp; Generated: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M')} UTC",
