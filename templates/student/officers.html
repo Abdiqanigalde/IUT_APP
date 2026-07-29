@@ -55,14 +55,28 @@
       </div>
       {% endif %}
 
+      {% if officer.handles_referred_exam %}
+      <div class="mb-3">
+        <span class="badge" style="background:#7c3aed;color:#fff;font-size:.75rem;">
+          <i class="fas fa-file-signature me-1"></i>Referred Exam Registration
+        </span>
+      </div>
+      {% endif %}
+
       <div class="d-flex gap-1 mt-auto">
         <a href="{{ url_for('student.officer_profile', officer_id=officer.id) }}" class="btn btn-outline-secondary btn-sm flex-fill">
           <i class="fas fa-info-circle me-1"></i>Profile
         </a>
         {% if not current_unavail.found %}
-        <a href="{{ url_for('student.book_calcom', officer_id=officer.id) }}" class="btn btn-primary btn-sm flex-fill">
-          <i class="fas fa-calendar-plus me-1"></i>Book
-        </a>
+          {% if officer.handles_referred_exam %}
+          <a href="{{ url_for('referred_exam.guide') }}" class="btn btn-sm flex-fill text-white" style="background:#7c3aed;">
+            <i class="fas fa-file-signature me-1"></i>Register
+          </a>
+          {% else %}
+          <a href="{{ url_for('student.book_calcom', officer_id=officer.id) }}" class="btn btn-primary btn-sm flex-fill">
+            <i class="fas fa-calendar-plus me-1"></i>Book
+          </a>
+          {% endif %}
         {% endif %}
       </div>
     </div>
