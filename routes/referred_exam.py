@@ -395,16 +395,21 @@ def download_pdf(reg_id):
         'Registrar Signature',
         'Registration Officer (Md. Enamul Hoque)',
     ]
+
+    registrar_sig_img = _load_logo_flowable('registrar_signature.png', 66, 52)
+
     sig_rows = []
-    for label in sig_labels:
+    for idx, label in enumerate(sig_labels):
         sig_rows.append([label, '', 'Date:', ''])
-        sig_rows.append(['', '', '', ''])  # blank signing space
+        box_content = registrar_sig_img if (idx == 2 and registrar_sig_img) else ''
+        sig_rows.append(['', box_content, '', ''])  # blank signing space
 
     sig_t = Table(sig_rows, colWidths=[190, 80, 30, 90],
                    rowHeights=[16, 34] * len(sig_labels))
     sig_style = [
         ('FONTSIZE',   (0, 0), (-1, -1), 9),
         ('VALIGN',     (0, 0), (-1, -1), 'BOTTOM'),
+        ('ALIGN',      (1, 0), (1, -1), 'CENTER'),
         ('TOPPADDING', (0, 0), (-1, -1), 2),
     ]
     for i in range(len(sig_labels)):
@@ -413,28 +418,48 @@ def download_pdf(reg_id):
         sig_style.append(('BOX', (3, box_row), (3, box_row), 0.7, colors.HexColor('#9ca3af')))
     sig_t.setStyle(TableStyle(sig_style))
 
-    # Official seal / stamp placeholder — dashed circle for the Registrar's
-    # office to physically stamp after signing.
-    stamp = Drawing(110, 110)
-    stamp.add(Circle(55, 58, 46, strokeColor=colors.HexColor('#9ca3af'),
-                      strokeWidth=1, strokeDashArray=(3, 2), fillColor=None))
-    stamp.add(String(55, 62, "OFFICIAL", fontSize=7.5, fillColor=colors.HexColor('#9ca3af'),
-                      textAnchor='middle'))
-    stamp.add(String(55, 51, "SEAL", fontSize=7.5, fillColor=colors.HexColor('#9ca3af'),
-                      textAnchor='middle'))
+    # Official seal — sits beside the Registrar's row specifically, matching
+    # the real notice: signature + round seal both next to the Registrar's
+    # name. Falls back to a dashed placeholder circle if the seal image
+    # hasn't been uploaded yet.
+    seal_img = _load_logo_flowable('registrar_seal.png', 70, 50)
+    if seal_img:
+        stamp_visual = seal_img
+    else:
+        stamp_visual = Drawing(85, 85)
+        stamp_visual.add(Circle(42, 45, 36, strokeColor=colors.HexColor('#9ca3af'),
+                                 strokeWidth=1, strokeDashArray=(3, 2), fillColor=None))
+        stamp_visual.add(String(42, 48, "OFFICIAL", fontSize=6.5, fillColor=colors.HexColor('#9ca3af'),
+                                 textAnchor='middle'))
+        stamp_visual.add(String(42, 39, "SEAL", fontSize=6.5, fillColor=colors.HexColor('#9ca3af'),
+                                 textAnchor='middle'))
     stamp_caption = Paragraph(
-        "Office Seal<br/>(Registrar's Office)",
+        "Office Seal (Registrar's Office)",
         ParagraphStyle('REStampCap', parent=styles['Normal'], fontSize=7.5,
                         alignment=TA_CENTER, textColor=colors.HexColor('#6b7280'))
     )
+    # Registrar is the 3rd signee — offset the stamp down so it lines up
+    # with that row instead of sitting at the top of the whole block.
+    registrar_row_offset = (16 + 34) * 2  # height of Student + HOD rows above it
+    stamp_column = [Spacer(1, registrar_row_offset), stamp_visual, Spacer(1, 3), stamp_caption]
 
-    layout_t = Table([[sig_t, [stamp, Spacer(1, 2), stamp_caption]]],
+    layout_t = Table([[sig_t, stamp_column]],
                       colWidths=[390, 105])
     layout_t.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('ALIGN',  (1, 0), (1, 0), 'CENTER'),
     ]))
     elements.append(layout_t)
+
+    if registrar_sig_img or seal_img:
+        elements.append(Spacer(1, 4))
+        elements.append(Paragraph(
+            "The Registrar's signature and office seal above are digitally "
+            "pre-authorized and applied automatically — no physical stamping "
+            "required for this section.",
+            ParagraphStyle('REAutoNote', parent=styles['Normal'], fontSize=7.5,
+                            textColor=colors.HexColor('#9ca3af'))
+        ))
 
     elements.append(Spacer(1, 20))
     elements.append(Paragraph(
