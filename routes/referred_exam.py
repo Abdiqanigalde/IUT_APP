@@ -9,7 +9,7 @@ Digitizes the paper-based "referred exam" course registration process:
   3. The student gets notified (in-app + email) that their paper is ready
      to collect.
 """
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, Response
 from flask_login import login_required, current_user
 from models import db, ReferredExamRegistration, Officer, Notification, User
 from datetime import datetime, timezone
@@ -255,3 +255,131 @@ def delete(reg_id):
         db.session.commit()
         flash('Registration deleted.', 'success')
     return redirect(url_for('referred_exam.officer_dashboard'))
+
+
+@referred_exam_bp.route('/officer/referred-exam/<int:reg_id>/pdf')
+@login_required
+def download_pdf(reg_id):
+    """Printable PDF slip for the officer to download/print — includes
+    signature lines for student, Head of Department, Registrar, and the
+    registration officer, since the physical paper still needs wet signatures."""
+    if not _officer_can_manage():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+
+    registration = db.session.get(ReferredExamRegistration, reg_id)
+    if not registration:
+        flash('Registration not found.', 'danger')
+        return redirect(url_for('referred_exam.officer_dashboard'))
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    import io as _io
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                             rightMargin=36, leftMargin=36,
+                             topMargin=32, bottomMargin=28)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('RETitle', parent=styles['Heading1'],
+                                  fontSize=17, alignment=TA_CENTER,
+                                  textColor=colors.HexColor('#4c1d95'))
+    sub_style = ParagraphStyle('RESub', parent=styles['Normal'],
+                                fontSize=10, alignment=TA_CENTER,
+                                textColor=colors.HexColor('#6b7280'))
+    section_style = ParagraphStyle('RESection', parent=styles['Heading3'],
+                                    fontSize=11, textColor=colors.HexColor('#4c1d95'),
+                                    spaceBefore=14, spaceAfter=6)
+
+    elements = []
+    elements.append(Paragraph("Islamic University of Technology (IUT)", title_style))
+    elements.append(Paragraph("Referred Exam Registration Form", sub_style))
+    elements.append(Spacer(1, 4))
+    elements.append(Paragraph(
+        f"Registration #{registration.id} &nbsp;|&nbsp; Status: {registration.status} "
+        f"&nbsp;|&nbsp; Generated: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M')} UTC",
+        sub_style
+    ))
+
+    elements.append(Paragraph("Student Information", section_style))
+    student_data = [
+        ['Full Name',    registration.student_name],
+        ['Student ID',   registration.student_id_num],
+        ['Department',   registration.department],
+        ['Submitted On', registration.created_at.strftime('%d %b %Y, %I:%M %p')],
+    ]
+    st = Table(student_data, colWidths=[130, 360])
+    st.setStyle(TableStyle([
+        ('FONTNAME',  (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE',  (0, 0), (-1, -1), 9.5),
+        ('BACKGROUND',(0, 0), (0, -1), colors.HexColor('#f5f3ff')),
+        ('GRID',      (0, 0), (-1, -1), 0.5, colors.HexColor('#dee2e6')),
+        ('PADDING',   (0, 0), (-1, -1), 7),
+    ]))
+    elements.append(st)
+
+    elements.append(Paragraph("Courses Registered for Referred Exam", section_style))
+    course_rows = [['#', 'Course Code', 'Course Title']]
+    for i, c in enumerate(registration.course_list(), 1):
+        course_rows.append([str(i), c['code'], c['title'] or '—'])
+    while len(course_rows) < 4:  # pad to always show 3 rows
+        course_rows.append([str(len(course_rows)), '', ''])
+
+    ct = Table(course_rows, colWidths=[25, 110, 355])
+    ct.setStyle(TableStyle([
+        ('BACKGROUND',      (0, 0), (-1, 0), colors.HexColor('#4c1d95')),
+        ('TEXTCOLOR',       (0, 0), (-1, 0), colors.white),
+        ('FONTNAME',        (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',        (0, 0), (-1, -1), 9.5),
+        ('ROWBACKGROUNDS',  (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ('GRID',            (0, 0), (-1, -1), 0.5, colors.HexColor('#dee2e6')),
+        ('PADDING',         (0, 0), (-1, -1), 7),
+    ]))
+    elements.append(ct)
+
+    if registration.officer_note:
+        elements.append(Paragraph("Officer's Note", section_style))
+        elements.append(Paragraph(registration.officer_note, styles['Normal']))
+
+    elements.append(Spacer(1, 30))
+    elements.append(Paragraph("Signatures", section_style))
+    sig_rows = [
+        ['Student Signature', '', 'Date', ''],
+        ['', '', '', ''],
+        ['Head of Department Signature', '', 'Date', ''],
+        ['', '', '', ''],
+        ['Registrar Signature', '', 'Date', ''],
+        ['', '', '', ''],
+        ['Registration Officer (Md. Enamul Hoque)', '', 'Date', ''],
+    ]
+    sig_t = Table(sig_rows, colWidths=[210, 100, 60, 120], rowHeights=[22, 22]*3 + [22])
+    sig_t.setStyle(TableStyle([
+        ('FONTSIZE',    (0, 0), (-1, -1), 9),
+        ('VALIGN',      (0, 0), (-1, -1), 'BOTTOM'),
+        ('LINEBELOW',   (1, 0), (1, 0), 0.7, colors.black),
+        ('LINEBELOW',   (3, 0), (3, 0), 0.7, colors.black),
+        ('LINEBELOW',   (1, 2), (1, 2), 0.7, colors.black),
+        ('LINEBELOW',   (3, 2), (3, 2), 0.7, colors.black),
+        ('LINEBELOW',   (1, 4), (1, 4), 0.7, colors.black),
+        ('LINEBELOW',   (3, 4), (3, 4), 0.7, colors.black),
+        ('LINEBELOW',   (1, 6), (1, 6), 0.7, colors.black),
+        ('LINEBELOW',   (3, 6), (3, 6), 0.7, colors.black),
+    ]))
+    elements.append(sig_t)
+
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph(
+        "This form was generated by the IUT University Appointment Management System.",
+        ParagraphStyle('REFooter', parent=styles['Normal'], fontSize=8,
+                        alignment=TA_CENTER, textColor=colors.HexColor('#9ca3af'))
+    ))
+
+    doc.build(elements)
+    buf.seek(0)
+    filename = f"referred_exam_{registration.student_id_num}_{registration.id}.pdf"
+    return Response(buf, mimetype='application/pdf',
+                     headers={'Content-Disposition': f'attachment; filename={filename}'})
