@@ -279,9 +279,31 @@ def download_pdf(reg_id):
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
     from reportlab.graphics.shapes import Drawing, Circle, String
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from flask import current_app
     import io as _io
     import os
+
+    # Register the Arabic-capable font once per process (falls back to
+    # Helvetica gracefully if the font file isn't bundled yet).
+    arabic_font = 'Helvetica'
+    try:
+        amiri_path = os.path.join(current_app.static_folder, 'fonts', 'Amiri-Regular.ttf')
+        if os.path.exists(amiri_path):
+            if 'Amiri' not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont('Amiri', amiri_path))
+            arabic_font = 'Amiri'
+    except Exception as _font_err:
+        print(f'[IUT] Arabic font registration error (non-fatal): {_font_err}')
+
+    def _arabic(text):
+        try:
+            import arabic_reshaper
+            from bidi.algorithm import get_display
+            return get_display(arabic_reshaper.reshape(text))
+        except Exception:
+            return text
 
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -289,7 +311,7 @@ def download_pdf(reg_id):
                              topMargin=32, bottomMargin=28)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('RETitle', parent=styles['Heading1'],
-                                  fontSize=17, alignment=TA_CENTER,
+                                  fontSize=14, alignment=TA_CENTER,
                                   textColor=colors.HexColor('#4c1d95'))
     sub_style = ParagraphStyle('RESub', parent=styles['Normal'],
                                 fontSize=10, alignment=TA_CENTER,
@@ -313,17 +335,31 @@ def download_pdf(reg_id):
         buf.seek(0)
         return RLImage(buf, width=width, height=height)
 
-    iut_logo = _load_logo_flowable('iut_logo.png', 50, 36)
-    oic_logo = _load_logo_flowable('oic_logo.png', 50, 27)
+    iut_logo = _load_logo_flowable('iut_logo.png', 78, 56)
+    oic_logo = _load_logo_flowable('oic_logo.png', 78, 43)
+
+    ar_style = ParagraphStyle('REArabic', fontName=arabic_font, fontSize=15,
+                               alignment=TA_CENTER, textColor=colors.black, leading=19)
+    fr_style = ParagraphStyle('REFrench', fontName='Helvetica-Oblique', fontSize=10,
+                               alignment=TA_CENTER, textColor=colors.black, leading=13)
+    en_style = ParagraphStyle('REEnglish', fontName='Helvetica', fontSize=12,
+                               alignment=TA_CENTER, textColor=colors.black, leading=15)
+    place_style = ParagraphStyle('REPlace', fontName='Helvetica', fontSize=11,
+                                  alignment=TA_CENTER, textColor=colors.black, leading=14)
+    oic_line_style = ParagraphStyle('REOicLine', fontName='Helvetica-Bold', fontSize=11.5,
+                                     alignment=TA_CENTER, textColor=colors.black, leading=14)
 
     header_title = [
-        Paragraph("Islamic University of Technology (IUT)", title_style),
-        Paragraph("Referred Exam Registration Form", sub_style),
+        Paragraph(_arabic("الجامعة الإسلامية للتكنولوجيا"), ar_style),
+        Paragraph("UNIVERSITE ISLAMIQUE DE TECHNOLOGIE", fr_style),
+        Paragraph("ISLAMIC UNIVERSITY OF TECHNOLOGY", en_style),
+        Paragraph("DHAKA, BANGLADESH", place_style),
+        Paragraph("ORGANISATION OF ISLAMIC COOPERATION", oic_line_style),
     ]
 
     header_t = Table(
         [[iut_logo or '', header_title, oic_logo or '']],
-        colWidths=[70, 383, 70]
+        colWidths=[90, 335, 90]
     )
     header_t.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -332,7 +368,9 @@ def download_pdf(reg_id):
         ('ALIGN',  (2, 0), (2, 0), 'RIGHT'),
     ]))
     elements.append(header_t)
-    elements.append(Spacer(1, 4))
+    elements.append(Spacer(1, 8))
+    elements.append(Paragraph("Referred Exam Registration Form", title_style))
+    elements.append(Spacer(1, 2))
 
     elements.append(Paragraph(
         f"Registration #{registration.id} &nbsp;|&nbsp; Status: {registration.status} "
@@ -396,15 +434,15 @@ def download_pdf(reg_id):
         'Registration Officer (Md. Enamul Hoque)',
     ]
 
-    registrar_sig_img = _load_logo_flowable('registrar_signature.png', 66, 52)
+    registrar_sig_img = _load_logo_flowable('registrar_signature.png', 62, 48)
 
     sig_rows = []
     for idx, label in enumerate(sig_labels):
         sig_rows.append([label, '', 'Date:', ''])
         box_content = registrar_sig_img if (idx == 2 and registrar_sig_img) else ''
-        sig_rows.append(['', box_content, '', ''])  # blank signing space
+        sig_rows.append(['', box_content, '', ''])  # blank signing space, sits above the line
 
-    sig_t = Table(sig_rows, colWidths=[190, 80, 30, 90],
+    sig_t = Table(sig_rows, colWidths=[190, 160, 30, 130],
                    rowHeights=[16, 34] * len(sig_labels))
     sig_style = [
         ('FONTSIZE',   (0, 0), (-1, -1), 9),
@@ -414,51 +452,46 @@ def download_pdf(reg_id):
     ]
     for i in range(len(sig_labels)):
         box_row = i * 2 + 1
-        sig_style.append(('BOX', (1, box_row), (1, box_row), 0.7, colors.HexColor('#9ca3af')))
-        sig_style.append(('BOX', (3, box_row), (3, box_row), 0.7, colors.HexColor('#9ca3af')))
+        sig_style.append(('LINEBELOW', (1, box_row), (1, box_row), 0.7, colors.black))
+        sig_style.append(('LINEBELOW', (3, box_row), (3, box_row), 0.7, colors.black))
     sig_t.setStyle(TableStyle(sig_style))
+    elements.append(sig_t)
 
-    # Official seal — sits beside the Registrar's row specifically, matching
-    # the real notice: signature + round seal both next to the Registrar's
-    # name. Falls back to a dashed placeholder circle if the seal image
-    # hasn't been uploaded yet.
-    seal_img = _load_logo_flowable('registrar_seal.png', 70, 50)
+    # IUT's official seal — not tied to any one signee, so it sits centered
+    # underneath the whole signature block, sized to actually read as a seal.
+    seal_img = _load_logo_flowable('registrar_seal.png', 140, 100)
     if seal_img:
+        seal_img.hAlign = 'CENTER'
         stamp_visual = seal_img
     else:
-        stamp_visual = Drawing(85, 85)
-        stamp_visual.add(Circle(42, 45, 36, strokeColor=colors.HexColor('#9ca3af'),
+        stamp_visual = Drawing(140, 140)
+        stamp_visual.add(Circle(70, 73, 60, strokeColor=colors.HexColor('#9ca3af'),
                                  strokeWidth=1, strokeDashArray=(3, 2), fillColor=None))
-        stamp_visual.add(String(42, 48, "OFFICIAL", fontSize=6.5, fillColor=colors.HexColor('#9ca3af'),
+        stamp_visual.add(String(70, 77, "OFFICIAL", fontSize=9, fillColor=colors.HexColor('#9ca3af'),
                                  textAnchor='middle'))
-        stamp_visual.add(String(42, 39, "SEAL", fontSize=6.5, fillColor=colors.HexColor('#9ca3af'),
+        stamp_visual.add(String(70, 64, "SEAL", fontSize=9, fillColor=colors.HexColor('#9ca3af'),
                                  textAnchor='middle'))
+        stamp_visual.hAlign = 'CENTER'
+
     stamp_caption = Paragraph(
-        "Office Seal (Registrar's Office)",
-        ParagraphStyle('REStampCap', parent=styles['Normal'], fontSize=7.5,
+        "Official Seal — Islamic University of Technology (IUT)",
+        ParagraphStyle('REStampCap', parent=styles['Normal'], fontSize=8.5,
                         alignment=TA_CENTER, textColor=colors.HexColor('#6b7280'))
     )
-    # Registrar is the 3rd signee — offset the stamp down so it lines up
-    # with that row instead of sitting at the top of the whole block.
-    registrar_row_offset = (16 + 34) * 2  # height of Student + HOD rows above it
-    stamp_column = [Spacer(1, registrar_row_offset), stamp_visual, Spacer(1, 3), stamp_caption]
 
-    layout_t = Table([[sig_t, stamp_column]],
-                      colWidths=[390, 105])
-    layout_t.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN',  (1, 0), (1, 0), 'CENTER'),
-    ]))
-    elements.append(layout_t)
+    elements.append(Spacer(1, 18))
+    elements.append(stamp_visual)
+    elements.append(Spacer(1, 4))
+    elements.append(stamp_caption)
 
     if registrar_sig_img or seal_img:
-        elements.append(Spacer(1, 4))
+        elements.append(Spacer(1, 6))
         elements.append(Paragraph(
-            "The Registrar's signature and office seal above are digitally "
+            "The Registrar's signature and the IUT seal above are digitally "
             "pre-authorized and applied automatically — no physical stamping "
             "required for this section.",
             ParagraphStyle('REAutoNote', parent=styles['Normal'], fontSize=7.5,
-                            textColor=colors.HexColor('#9ca3af'))
+                            alignment=TA_CENTER, textColor=colors.HexColor('#9ca3af'))
         ))
 
     elements.append(Spacer(1, 20))
