@@ -275,10 +275,13 @@ def download_pdf(reg_id):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
+    from reportlab.graphics.shapes import Drawing, Circle, String
+    from flask import current_app
     import io as _io
+    import os
 
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -296,6 +299,21 @@ def download_pdf(reg_id):
                                     spaceBefore=14, spaceAfter=6)
 
     elements = []
+
+    logo_path = os.path.join(current_app.static_folder, 'iut_logo.png')
+    if os.path.exists(logo_path):
+        from PIL import Image as PILImage
+        logo_buf = _io.BytesIO()
+        with PILImage.open(logo_path) as pil_img:
+            pil_img = pil_img.convert('RGBA')
+            pil_img.thumbnail((280, 200))
+            pil_img.save(logo_buf, format='PNG')
+        logo_buf.seek(0)
+        logo = RLImage(logo_buf, width=56, height=40)
+        logo.hAlign = 'CENTER'
+        elements.append(logo)
+        elements.append(Spacer(1, 6))
+
     elements.append(Paragraph("Islamic University of Technology (IUT)", title_style))
     elements.append(Paragraph("Referred Exam Registration Form", sub_style))
     elements.append(Spacer(1, 4))
@@ -347,29 +365,59 @@ def download_pdf(reg_id):
 
     elements.append(Spacer(1, 30))
     elements.append(Paragraph("Signatures", section_style))
-    sig_rows = [
-        ['Student Signature', '', 'Date', ''],
-        ['', '', '', ''],
-        ['Head of Department Signature', '', 'Date', ''],
-        ['', '', '', ''],
-        ['Registrar Signature', '', 'Date', ''],
-        ['', '', '', ''],
-        ['Registration Officer (Md. Enamul Hoque)', '', 'Date', ''],
+    elements.append(Paragraph(
+        "To be signed by hand after printing.",
+        ParagraphStyle('RESigNote', parent=styles['Normal'], fontSize=8.5,
+                        textColor=colors.HexColor('#6b7280'))
+    ))
+    elements.append(Spacer(1, 6))
+
+    sig_labels = [
+        'Student Signature',
+        'Head of Department Signature',
+        'Registrar Signature',
+        'Registration Officer (Md. Enamul Hoque)',
     ]
-    sig_t = Table(sig_rows, colWidths=[210, 100, 60, 120], rowHeights=[22, 22]*3 + [22])
-    sig_t.setStyle(TableStyle([
-        ('FONTSIZE',    (0, 0), (-1, -1), 9),
-        ('VALIGN',      (0, 0), (-1, -1), 'BOTTOM'),
-        ('LINEBELOW',   (1, 0), (1, 0), 0.7, colors.black),
-        ('LINEBELOW',   (3, 0), (3, 0), 0.7, colors.black),
-        ('LINEBELOW',   (1, 2), (1, 2), 0.7, colors.black),
-        ('LINEBELOW',   (3, 2), (3, 2), 0.7, colors.black),
-        ('LINEBELOW',   (1, 4), (1, 4), 0.7, colors.black),
-        ('LINEBELOW',   (3, 4), (3, 4), 0.7, colors.black),
-        ('LINEBELOW',   (1, 6), (1, 6), 0.7, colors.black),
-        ('LINEBELOW',   (3, 6), (3, 6), 0.7, colors.black),
+    sig_rows = []
+    for label in sig_labels:
+        sig_rows.append([label, '', 'Date:', ''])
+        sig_rows.append(['', '', '', ''])  # blank signing space
+
+    sig_t = Table(sig_rows, colWidths=[190, 80, 30, 90],
+                   rowHeights=[16, 34] * len(sig_labels))
+    sig_style = [
+        ('FONTSIZE',   (0, 0), (-1, -1), 9),
+        ('VALIGN',     (0, 0), (-1, -1), 'BOTTOM'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+    ]
+    for i in range(len(sig_labels)):
+        box_row = i * 2 + 1
+        sig_style.append(('BOX', (1, box_row), (1, box_row), 0.7, colors.HexColor('#9ca3af')))
+        sig_style.append(('BOX', (3, box_row), (3, box_row), 0.7, colors.HexColor('#9ca3af')))
+    sig_t.setStyle(TableStyle(sig_style))
+
+    # Official seal / stamp placeholder — dashed circle for the Registrar's
+    # office to physically stamp after signing.
+    stamp = Drawing(110, 110)
+    stamp.add(Circle(55, 58, 46, strokeColor=colors.HexColor('#9ca3af'),
+                      strokeWidth=1, strokeDashArray=(3, 2), fillColor=None))
+    stamp.add(String(55, 62, "OFFICIAL", fontSize=7.5, fillColor=colors.HexColor('#9ca3af'),
+                      textAnchor='middle'))
+    stamp.add(String(55, 51, "SEAL", fontSize=7.5, fillColor=colors.HexColor('#9ca3af'),
+                      textAnchor='middle'))
+    stamp_caption = Paragraph(
+        "Office Seal<br/>(Registrar's Office)",
+        ParagraphStyle('REStampCap', parent=styles['Normal'], fontSize=7.5,
+                        alignment=TA_CENTER, textColor=colors.HexColor('#6b7280'))
+    )
+
+    layout_t = Table([[sig_t, [stamp, Spacer(1, 2), stamp_caption]]],
+                      colWidths=[390, 105])
+    layout_t.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN',  (1, 0), (1, 0), 'CENTER'),
     ]))
-    elements.append(sig_t)
+    elements.append(layout_t)
 
     elements.append(Spacer(1, 20))
     elements.append(Paragraph(
