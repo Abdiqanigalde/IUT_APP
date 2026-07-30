@@ -519,9 +519,11 @@
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.audit_log') }}"><i class="fas fa-clipboard-list"></i>Audit</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.manage_holidays') }}"><i class="fas fa-umbrella-beach"></i>Holidays</a></li>
                     {% elif current_user.role == 'officer' %}
+                        {% if not (nav_officer_record and nav_officer_record.handles_referred_exam) %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.dashboard') }}"><i class="fas fa-home"></i>Dashboard</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.schedule') }}"><i class="fas fa-calendar-alt"></i>Schedule</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.scan_page') }}"><i class="fas fa-qrcode"></i>Scan QR</a></li>
+                        {% endif %}
                         {% if nav_officer_record and nav_officer_record.handles_referred_exam %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('referred_exam.officer_dashboard') }}"><i class="fas fa-file-signature"></i>Referred Exam</a></li>
                         {% endif %}
