@@ -596,7 +596,12 @@ def index():
         role = current_user.role
         if role == 'super_admin':  return redirect(url_for('super_admin.dashboard'))
         if role == 'admin':        return redirect(url_for('admin.dashboard'))
-        if role == 'officer':      return redirect(url_for('officer.dashboard'))
+        if role == 'officer':
+            from models import Officer
+            _off = Officer.query.filter_by(email=current_user.email).first()
+            if _off and _off.handles_referred_exam:
+                return redirect(url_for('referred_exam.officer_dashboard'))
+            return redirect(url_for('officer.dashboard'))
         if role == 'visa_officer': return redirect(url_for('visa.visa_officer_dashboard'))
         return redirect(url_for('student.dashboard'))
     return render_template('home.html')
