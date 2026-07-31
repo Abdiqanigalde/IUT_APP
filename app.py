@@ -4,7 +4,6 @@ from flask import Flask, redirect, url_for, render_template, session, request as
 from flask_login import LoginManager, current_user, logout_user
 from flask_wtf.csrf import CSRFProtect
 from flask_bcrypt import Bcrypt
-from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -35,21 +34,24 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
 
-# ── Flask-Mail ────────────────────────────────────────────────────────────────
-app.config['MAIL_SERVER']  = 'smtp-relay.brevo.com'
-app.config['MAIL_PORT']    = 587
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USE_SSL'] = False
-app.config['MAIL_USERNAME']       = os.environ.get('MAIL_USERNAME', '')
-app.config['MAIL_PASSWORD']       = os.environ.get('MAIL_PASSWORD', '')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME', 'noreply@iut-dhaka.edu')
+# ── Email (Brevo HTTP API — see utils.send_email) ──────────────────────────────
+# The app sends all mail through Brevo's HTTP API, not SMTP, because Render's
+# free tier blocks outbound SMTP ports. BREVO_API_KEY is the required env var;
+# MAIL_USERNAME is only used as the "from" address shown to recipients.
+app.config['BREVO_API_KEY'] = os.environ.get('BREVO_API_KEY', '')
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'noreply@iut-dhaka.edu')
+if not app.config['BREVO_API_KEY']:
+    print(
+        'WARNING: BREVO_API_KEY is not set. Email verification and password reset '
+        'links will not be sent — affected users will be unable to log in or '
+        'recover their password. Set BREVO_API_KEY before inviting real users.'
+    )
 
 # ── Extensions ────────────────────────────────────────────────────────────────
 csrf     = CSRFProtect(app)
 db.init_app(app)
 migrate  = Migrate(app, db)
 bcrypt   = Bcrypt(app)
-mail     = Mail(app)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 limiter = Limiter(
