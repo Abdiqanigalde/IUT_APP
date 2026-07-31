@@ -146,6 +146,13 @@
                 {% endif %}
             {% endwith %}
 
+            {% if unverified_email %}
+            <form id="resend-form" method="POST" action="{{ url_for('auth.resend_verification') }}" style="display:none;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="email" value="{{ unverified_email }}">
+            </form>
+            {% endif %}
+
             <form method="POST">
                 {{ form.hidden_tag() }}
 
