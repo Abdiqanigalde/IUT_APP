@@ -30,7 +30,7 @@ def register():
             email=form.email.data,
             password=hashed_password,
             role='student',           # always 'student' for public registration
-            email_verified=True,
+            email_verified=False,
         )
         user.generate_verify_token()
         db.session.add(user)
@@ -81,8 +81,14 @@ def login():
                 flash('Your account has been deactivated. Contact an administrator.', 'danger')
                 return render_template('login.html', title='Login', form=form)
             if not user.email_verified:
-                user.email_verified = True
-                db.session.commit()
+                flash(
+                    'Please verify your email before logging in. Check your inbox, or '
+                    '<a href="#" onclick="document.getElementById(\'resend-form\').submit(); return false;">'
+                    'resend the verification email</a>.',
+                    'warning'
+                )
+                return render_template('login.html', title='Login', form=form,
+                                        unverified_email=user.email)
             # Reset failed logins on success
             user.failed_logins = 0
             user.locked_until = None
@@ -136,16 +142,17 @@ def forgot_password():
             if mail_configured:
                 send_email('Password Reset — IUT Appointments', [user.email],
                            password_reset_email(user, reset_url))
-                flash('A password reset link has been sent to your email address.', 'info')
             else:
-                # No email configured — show the link directly so user can proceed
-                flash(
-                    f'Email service is not configured. Use this link to reset your password '
-                    f'(valid for 1 hour): <a href="{reset_url}" class="alert-link">Click here to reset your password</a>',
-                    'warning'
+                # Email isn't configured — never hand the reset link to the requester,
+                # since anyone can submit any registered email address here. Log it
+                # for an admin to retrieve/action instead.
+                current_app.logger.warning(
+                    f'BREVO_API_KEY not set — password reset link for user id={user.id} '
+                    f'not emailed. Link: {reset_url}'
                 )
-        else:
-            flash('If that email is registered, a reset link has been sent.', 'info')
+        # Same response whether or not the email exists / mail is configured,
+        # so this endpoint can't be used to enumerate registered accounts.
+        flash('If that email is registered, a password reset link has been sent to it.', 'info')
         return redirect(url_for('auth.forgot_password'))
     return render_template('forgot_password.html', title='Forgot Password', form=form)
 
