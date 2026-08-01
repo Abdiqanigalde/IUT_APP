@@ -2,7 +2,7 @@
 {% block content %}
 <style>
   .detail-header {
-    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    background: linear-gradient(135deg, #145C39 0%, #1E7A4C 100%);
     border-radius: 16px;
     padding: 28px 32px;
     color: white;
@@ -42,17 +42,17 @@
     transition: box-shadow .2s, border-color .2s;
     background: white;
   }
-  .doc-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); border-color: #2563eb; }
+  .doc-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); border-color: #1E7A4C; }
   .doc-card .doc-icon { font-size: 2rem; margin-bottom: 8px; }
   .doc-card .doc-name { font-size: .8rem; font-weight: 600; color: #374151; margin-bottom: 8px; }
   .doc-card a.view-btn {
     display: inline-block;
-    background: #2563eb; color: white;
+    background: #1E7A4C; color: white;
     border-radius: 8px; padding: 5px 14px;
     font-size: .78rem; font-weight: 600; text-decoration: none;
     transition: background .2s;
   }
-  .doc-card a.view-btn:hover { background: #1d4ed8; }
+  .doc-card a.view-btn:hover { background: #145C39; }
   .doc-card .missing-doc { color: #9ca3af; font-size: .78rem; font-style: italic; }
 
   .status-form {
@@ -61,7 +61,7 @@
     padding: 24px;
     background: white;
   }
-  .status-form h5 { font-weight: 700; margin-bottom: 16px; color: #1e3a5f; }
+  .status-form h5 { font-weight: 700; margin-bottom: 16px; color: #145C39; }
 
   .status-btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
   .status-radio { display: none; }
@@ -71,12 +71,12 @@
     font-size: .88rem; transition: all .2s; user-select: none;
   }
   .status-radio:checked + .status-label { border-width: 2px; }
-  #s-approved:checked + .status-label { border-color: #22c55e; background: #f0fdf4; color: #15803d; }
+  #s-approved:checked + .status-label { border-color: #3ECB82; background: #f0fdf4; color: #15803d; }
   #s-rejected:checked + .status-label { border-color: #ef4444; background: #fef2f2; color: #dc2626; }
-  #s-pending:checked  + .status-label { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+  #s-pending:checked  + .status-label { border-color: #D8B25C; background: #fffbeb; color: #b45309; }
 
   .save-btn {
-    background: linear-gradient(135deg, #1e3a5f, #2563eb);
+    background: linear-gradient(135deg, #145C39, #1E7A4C);
     color: white; border: none; border-radius: 10px;
     padding: 11px 28px; font-size: .95rem; font-weight: 600;
     display: inline-flex; align-items: center; gap: 8px;
@@ -126,9 +126,9 @@
           <span class="lbl">Status</span>
           <span class="val">
             {% if application.status == 'Pending' %}
-              <span style="color:#f59e0b;font-weight:700;">⏳ Pending</span>
+              <span style="color:#D8B25C;font-weight:700;">⏳ Pending</span>
             {% elif application.status == 'Approved' %}
-              <span style="color:#22c55e;font-weight:700;">✅ Approved</span>
+              <span style="color:#3ECB82;font-weight:700;">✅ Approved</span>
             {% elif application.status == 'Rejected' %}
               <span style="color:#ef4444;font-weight:700;">❌ Rejected</span>
             {% endif %}
