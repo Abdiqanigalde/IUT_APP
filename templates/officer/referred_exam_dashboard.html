@@ -2,7 +2,7 @@
 {% block content %}
 <style>
   .re-header {
-    background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%);
+    background: linear-gradient(135deg, #6B5226 0%, #B8934A 100%);
     border-radius: 16px;
     padding: 32px 36px;
     color: white;
@@ -33,12 +33,12 @@
   .stat-card .stat-num  { font-size: 1.8rem; font-weight: 800; line-height: 1; }
   .stat-card .stat-lbl  { font-size: .8rem; color: #6b7280; margin-top: 2px; }
 
-  .re-table th { background: #4c1d95; color: white; font-size: .85rem; padding: 12px 16px; }
+  .re-table th { background: #6B5226; color: white; font-size: .85rem; padding: 12px 16px; }
   .re-table td { padding: 12px 16px; font-size: .88rem; vertical-align: middle; }
-  .re-table tbody tr:hover { background: #f5f3ff; }
+  .re-table tbody tr:hover { background: #FBF6E9; }
 
   .badge-pending   { background: #fef3c7; color: #92400e; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
-  .badge-ready     { background: #ede9fe; color: #5b21b6; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
+  .badge-ready     { background: #F3E7C9; color: #8F6F32; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
   .badge-collected { background: #d1fae5; color: #065f46; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
   .badge-rejected  { background: #fee2e2; color: #991b1b; border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 600; }
 
@@ -46,7 +46,7 @@
     border-radius: 10px; border: 1px solid #d1d5db;
     padding: 9px 16px; font-size: .9rem; width: 280px;
   }
-  .search-bar input:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+  .search-bar input:focus { outline: none; border-color: #B8934A; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
 </style>
 
 <!-- Header -->
@@ -65,25 +65,25 @@
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="stat-card bg-white">
-      <div class="stat-icon" style="background:#f5f3ff;"><i class="fas fa-inbox" style="color:#7c3aed;"></i></div>
-      <div><div class="stat-num" style="color:#7c3aed;">{{ total }}</div><div class="stat-lbl">Total</div></div>
+      <div class="stat-icon" style="background:#FBF6E9;"><i class="fas fa-inbox" style="color:#B8934A;"></i></div>
+      <div><div class="stat-num" style="color:#B8934A;">{{ total }}</div><div class="stat-lbl">Total</div></div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card bg-white">
-      <div class="stat-icon" style="background:#fffbeb;"><i class="fas fa-clock" style="color:#f59e0b;"></i></div>
-      <div><div class="stat-num" style="color:#f59e0b;">{{ pending }}</div><div class="stat-lbl">Pending</div></div>
+      <div class="stat-icon" style="background:#fffbeb;"><i class="fas fa-clock" style="color:#D8B25C;"></i></div>
+      <div><div class="stat-num" style="color:#D8B25C;">{{ pending }}</div><div class="stat-lbl">Pending</div></div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card bg-white">
-      <div class="stat-icon" style="background:#ede9fe;"><i class="fas fa-check-double" style="color:#7c3aed;"></i></div>
-      <div><div class="stat-num" style="color:#5b21b6;">{{ ready }}</div><div class="stat-lbl">Ready</div></div>
+      <div class="stat-icon" style="background:#F3E7C9;"><i class="fas fa-check-double" style="color:#B8934A;"></i></div>
+      <div><div class="stat-num" style="color:#8F6F32;">{{ ready }}</div><div class="stat-lbl">Ready</div></div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card bg-white">
-      <div class="stat-icon" style="background:#f0fdf4;"><i class="fas fa-check-circle" style="color:#22c55e;"></i></div>
+      <div class="stat-icon" style="background:#f0fdf4;"><i class="fas fa-check-circle" style="color:#3ECB82;"></i></div>
       <div><div class="stat-num text-success">{{ collected }}</div><div class="stat-lbl">Collected</div></div>
     </div>
   </div>
