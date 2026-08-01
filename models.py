@@ -22,6 +22,7 @@ class User(db.Model, UserMixin):
     is_active       = db.Column(db.Boolean, default=True)
     email_verified      = db.Column(db.Boolean, default=False)
     email_verify_token  = db.Column(db.String(64), nullable=True)
+    must_change_password = db.Column(db.Boolean, default=False)
     failed_logins   = db.Column(db.Integer, default=0)
     locked_until    = db.Column(db.DateTime, nullable=True)
     created_at      = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
