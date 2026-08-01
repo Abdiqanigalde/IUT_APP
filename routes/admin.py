@@ -632,14 +632,24 @@ def audit_log():
 @login_required
 @admin_required
 def export_csv():
+    from utils import csv_safe
     appointments = Appointment.query.all()
     output       = io.StringIO()
     writer       = csv.writer(output)
     writer.writerow(['ID', 'Student Name', 'Student ID', 'Department', 'Officer',
                      'Date', 'Time', 'Status', 'Rejection Note'])
     for apt in appointments:
-        writer.writerow([apt.id, apt.student_name, apt.student_id_num, apt.department,
-                         apt.officer.name, apt.date, apt.time, apt.status, apt.rejection_note or ''])
+        writer.writerow([
+            apt.id,
+            csv_safe(apt.student_name),
+            csv_safe(apt.student_id_num),
+            csv_safe(apt.department),
+            csv_safe(apt.officer.name),
+            apt.date,
+            csv_safe(apt.time),
+            csv_safe(apt.status),
+            csv_safe(apt.rejection_note or ''),
+        ])
     output.seek(0)
     return Response(output, mimetype="text/csv",
                     headers={"Content-disposition": "attachment; filename=appointments_export.csv"})
