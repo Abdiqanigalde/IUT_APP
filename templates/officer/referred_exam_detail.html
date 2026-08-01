@@ -2,7 +2,7 @@
 {% block content %}
 <style>
   .detail-header {
-    background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%);
+    background: linear-gradient(135deg, #6B5226 0%, #B8934A 100%);
     border-radius: 16px;
     padding: 28px 32px;
     color: white;
@@ -38,10 +38,10 @@
   }
   .course-item .course-num {
     width: 28px; height: 28px; border-radius: 50%;
-    background: #ede9fe; color: #5b21b6; font-weight: 700; font-size: .8rem;
+    background: #F3E7C9; color: #8F6F32; font-weight: 700; font-size: .8rem;
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
-  .course-item .course-code { font-weight: 700; color: #4c1d95; }
+  .course-item .course-code { font-weight: 700; color: #6B5226; }
   .course-item .course-title { color: #6b7280; font-size: .85rem; }
 
   .status-form {
@@ -50,7 +50,7 @@
     padding: 24px;
     background: white;
   }
-  .status-form h5 { font-weight: 700; margin-bottom: 16px; color: #4c1d95; }
+  .status-form h5 { font-weight: 700; margin-bottom: 16px; color: #6B5226; }
 
   .status-btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
   .status-radio { display: none; }
@@ -60,13 +60,13 @@
     font-size: .85rem; transition: all .2s; user-select: none;
   }
   .status-radio:checked + .status-label { border-width: 2px; }
-  #s-pending:checked   + .status-label { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
-  #s-ready:checked     + .status-label { border-color: #7c3aed; background: #f5f3ff; color: #5b21b6; }
-  #s-collected:checked + .status-label { border-color: #22c55e; background: #f0fdf4; color: #15803d; }
+  #s-pending:checked   + .status-label { border-color: #D8B25C; background: #fffbeb; color: #b45309; }
+  #s-ready:checked     + .status-label { border-color: #B8934A; background: #FBF6E9; color: #8F6F32; }
+  #s-collected:checked + .status-label { border-color: #3ECB82; background: #f0fdf4; color: #15803d; }
   #s-rejected:checked  + .status-label { border-color: #ef4444; background: #fef2f2; color: #dc2626; }
 
   .save-btn {
-    background: linear-gradient(135deg, #4c1d95, #7c3aed);
+    background: linear-gradient(135deg, #6B5226, #B8934A);
     color: white; border: none; border-radius: 10px;
     padding: 11px 28px; font-size: .95rem; font-weight: 600;
     display: inline-flex; align-items: center; gap: 8px;
@@ -119,11 +119,11 @@
           <span class="lbl">Status</span>
           <span class="val">
             {% if registration.status == 'Pending' %}
-              <span style="color:#f59e0b;font-weight:700;">⏳ Pending</span>
+              <span style="color:#D8B25C;font-weight:700;">⏳ Pending</span>
             {% elif registration.status == 'Ready' %}
-              <span style="color:#5b21b6;font-weight:700;">📄 Ready</span>
+              <span style="color:#8F6F32;font-weight:700;">📄 Ready</span>
             {% elif registration.status == 'Collected' %}
-              <span style="color:#22c55e;font-weight:700;">✅ Collected</span>
+              <span style="color:#3ECB82;font-weight:700;">✅ Collected</span>
             {% elif registration.status == 'Rejected' %}
               <span style="color:#ef4444;font-weight:700;">❌ Rejected</span>
             {% endif %}
