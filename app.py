@@ -101,6 +101,23 @@ with app.app_context():
     os.makedirs(db_dir, exist_ok=True)
     db.create_all()
 
+    # ── User.must_change_password: column self-heal (must run before ANY query
+    # touches the User table, since the super_admin check below is one) ────────
+    try:
+        from sqlalchemy import text as _mcp_text, inspect as _mcp_inspect
+        _user_cols = {c['name'] for c in _mcp_inspect(db.engine).get_columns('user')}
+        if 'must_change_password' not in _user_cols:
+            with db.engine.connect() as _mcp_conn:
+                _mcp_conn.execute(_mcp_text(
+                    'ALTER TABLE "user" ADD COLUMN must_change_password BOOLEAN DEFAULT FALSE'
+                ))
+                _mcp_conn.commit()
+            print('[IUT] user.must_change_password column added ✅')
+        else:
+            print('[IUT] user.must_change_password already exists — skipping.')
+    except Exception as _mcp_err:
+        print(f'[IUT] must_change_password column migration error (non-fatal): {_mcp_err}')
+
     # ── Auto-create super_admin if none exists ────────────────────────────────
     if not User.query.filter_by(role='super_admin').first():
         from flask_bcrypt import Bcrypt as _B
@@ -473,33 +490,23 @@ with app.app_context():
     except Exception as _rer_err:
         print(f'[IUT] referred exam migration error (non-fatal): {_rer_err}')
 
-    # ── User.must_change_password: column self-heal + flag existing super admins ──
+    # ── Flag any super_admin still on the published default password ──────────
     try:
-        from sqlalchemy import text, inspect as sa_inspect8
-        user_cols8 = {c['name'] for c in sa_inspect8(db.engine).get_columns('user')}
-        if 'must_change_password' not in user_cols8:
-            with db.engine.connect() as conn:
-                conn.execute(text('ALTER TABLE "user" ADD COLUMN must_change_password BOOLEAN DEFAULT FALSE'))
-                conn.commit()
-            print('[IUT] user.must_change_password column added ✅')
-            # Any super_admin still on the published default password from the README
-            # should be forced to change it now that the column exists.
-            from flask_bcrypt import Bcrypt as _MCPBcrypt
-            _mcp_b = _MCPBcrypt()
-            still_on_default = [
-                u for u in User.query.filter_by(role='super_admin').all()
-                if _mcp_b.check_password_hash(u.password, 'SuperAdmin@2026!')
-            ]
-            for u in still_on_default:
-                u.must_change_password = True
-            if still_on_default:
-                db.session.commit()
-                print(f'[IUT] Flagged {len(still_on_default)} super_admin(s) still on the '
-                      f'default password for a forced change ✅')
-        else:
-            print('[IUT] user.must_change_password already exists — skipping.')
-    except Exception as _mcp_err:
-        print(f'[IUT] must_change_password migration error (non-fatal): {_mcp_err}')
+        from flask_bcrypt import Bcrypt as _MCPBcrypt
+        _mcp_b = _MCPBcrypt()
+        still_on_default = [
+            u for u in User.query.filter_by(role='super_admin').all()
+            if not u.must_change_password
+            and _mcp_b.check_password_hash(u.password, 'SuperAdmin@2026!')
+        ]
+        for u in still_on_default:
+            u.must_change_password = True
+        if still_on_default:
+            db.session.commit()
+            print(f'[IUT] Flagged {len(still_on_default)} super_admin(s) still on the '
+                  f'default password for a forced change ✅')
+    except Exception as _mcp_flag_err:
+        print(f'[IUT] default-password flagging error (non-fatal): {_mcp_flag_err}')
 
     # ── Performance indexes on existing tables ──────────────────────────────────
     # create_all() only creates indexes for brand-new tables — these tables
