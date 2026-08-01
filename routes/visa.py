@@ -41,6 +41,7 @@ def send_visa_email(student, status, note=''):
     """Send email to student when visa application status changes."""
     try:
         from utils import send_email
+        from markupsafe import escape as _esc
 
         if status == 'Approved':
             subject = '✅ Visa Application Approved — IUT'
@@ -50,9 +51,9 @@ def send_visa_email(student, status, note=''):
                 <h1 style="color:white;margin:0;font-size:1.6rem;">✅ Application Approved!</h1>
               </div>
               <div style="background:#f9fafb;padding:28px;border-radius:0 0 12px 12px;border:1px solid #e5e7eb;">
-                <p style="font-size:1rem;color:#374151;">Dear <strong>{student.name}</strong>,</p>
+                <p style="font-size:1rem;color:#374151;">Dear <strong>{_esc(student.name)}</strong>,</p>
                 <p style="color:#374151;">Congratulations! Your visa document application has been <strong style="color:#16a34a;">approved</strong> by the visa officer.</p>
-                {"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Officer Note:</strong> " + note + "</div>" if note else ""}
+                {"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Officer Note:</strong> " + str(_esc(note)) + "</div>" if note else ""}
                 <p style="color:#374151;">You may now proceed with the next steps of your visa application process.</p>
                 <div style="text-align:center;margin-top:24px;">
                   <a href="https://iut-app.onrender.com/student/visa-guide"
@@ -74,9 +75,9 @@ def send_visa_email(student, status, note=''):
                 <h1 style="color:white;margin:0;font-size:1.6rem;">❌ Application Rejected</h1>
               </div>
               <div style="background:#f9fafb;padding:28px;border-radius:0 0 12px 12px;border:1px solid #e5e7eb;">
-                <p style="font-size:1rem;color:#374151;">Dear <strong>{student.name}</strong>,</p>
+                <p style="font-size:1rem;color:#374151;">Dear <strong>{_esc(student.name)}</strong>,</p>
                 <p style="color:#374151;">Unfortunately, your visa document application has been <strong style="color:#dc2626;">rejected</strong> by the visa officer.</p>
-                {"<div style='background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Reason:</strong> " + note + "</div>" if note else ""}
+                {"<div style='background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;border-radius:6px;margin:16px 0;'><strong>Reason:</strong> " + str(_esc(note)) + "</div>" if note else ""}
                 <p style="color:#374151;">Please log in to review the feedback, correct your documents, and resubmit your application.</p>
                 <div style="text-align:center;margin-top:24px;">
                   <a href="https://iut-app.onrender.com/student/visa-guide"
