@@ -2,7 +2,7 @@
 {% block content %}
 <style>
   .vo-header {
-    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    background: linear-gradient(135deg, #145C39 0%, #1E7A4C 100%);
     border-radius: 16px;
     padding: 32px 36px;
     color: white;
@@ -33,7 +33,7 @@
   .stat-card .stat-num  { font-size: 1.8rem; font-weight: 800; line-height: 1; }
   .stat-card .stat-lbl  { font-size: .8rem; color: #6b7280; margin-top: 2px; }
 
-  .app-table th { background: #1e3a5f; color: white; font-size: .85rem; padding: 12px 16px; }
+  .app-table th { background: #145C39; color: white; font-size: .85rem; padding: 12px 16px; }
   .app-table td { padding: 12px 16px; font-size: .88rem; vertical-align: middle; }
   .app-table tbody tr:hover { background: #f0f7ff; }
 
@@ -45,7 +45,7 @@
     border-radius: 10px; border: 1px solid #d1d5db;
     padding: 9px 16px; font-size: .9rem; width: 280px;
   }
-  .search-bar input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  .search-bar input:focus { outline: none; border-color: #1E7A4C; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
 </style>
 
 <!-- Header -->
@@ -63,19 +63,19 @@
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="stat-card bg-white">
-      <div class="stat-icon" style="background:#eff6ff;"><i class="fas fa-inbox" style="color:#2563eb;"></i></div>
+      <div class="stat-icon" style="background:#eff6ff;"><i class="fas fa-inbox" style="color:#1E7A4C;"></i></div>
       <div><div class="stat-num text-primary">{{ total }}</div><div class="stat-lbl">Total</div></div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card bg-white">
-      <div class="stat-icon" style="background:#fffbeb;"><i class="fas fa-clock" style="color:#f59e0b;"></i></div>
-      <div><div class="stat-num" style="color:#f59e0b;">{{ pending }}</div><div class="stat-lbl">Pending</div></div>
+      <div class="stat-icon" style="background:#fffbeb;"><i class="fas fa-clock" style="color:#D8B25C;"></i></div>
+      <div><div class="stat-num" style="color:#D8B25C;">{{ pending }}</div><div class="stat-lbl">Pending</div></div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card bg-white">
-      <div class="stat-icon" style="background:#f0fdf4;"><i class="fas fa-check-circle" style="color:#22c55e;"></i></div>
+      <div class="stat-icon" style="background:#f0fdf4;"><i class="fas fa-check-circle" style="color:#3ECB82;"></i></div>
       <div><div class="stat-num text-success">{{ approved }}</div><div class="stat-lbl">Approved</div></div>
     </div>
   </div>
