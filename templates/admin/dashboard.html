@@ -97,7 +97,7 @@
           <tr {% if o.workload == 'overloaded' %}style="background:rgba(220,53,69,.06);"{% endif %}>
             <td class="ps-4 fw-600">{{ o.name }}</td>
             <td class="text-center">
-              <span class="fw-bold" style="color:{{ 'var(--danger)' if o.pending >= 10 else ('var(--warning, #d97706)' if o.pending >= 5 else 'inherit') }};">{{ o.pending }}</span>
+              <span class="fw-bold" style="color:{{ 'var(--danger)' if o.pending >= 10 else ('var(--warning, #B8934A)' if o.pending >= 5 else 'inherit') }};">{{ o.pending }}</span>
             </td>
             <td class="text-center">
               {% if o.daily_limit > 0 %}
@@ -117,7 +117,7 @@
               {% elif o.workload == 'idle' %}
                 <span class="badge bg-secondary">No activity</span>
               {% elif o.workload == 'light' %}
-                <span class="badge" style="background:#0ea5e9;">Light load</span>
+                <span class="badge" style="background:#3ECB82;">Light load</span>
               {% else %}
                 <span class="badge bg-success">Balanced</span>
               {% endif %}
@@ -245,7 +245,7 @@ new Chart(document.getElementById('statusChart'), {
     labels: ['Pending','Approved','Completed','Rejected'],
     datasets: [{
       data: [{{ status_counts.Pending }},{{ status_counts.Approved }},{{ status_counts.Completed }},{{ status_counts.Rejected }}],
-      backgroundColor: ['#f59e0b','#10b981','#1a56db','#ef4444'],
+      backgroundColor: ['#D8B25C','#3ECB82','#1E7A4C','#ef4444'],
       borderWidth: 0, hoverOffset: 6
     }]
   },
@@ -258,7 +258,7 @@ new Chart(document.getElementById('officerChart'), {
     labels: {{ officers|tojson }},
     datasets: [{
       data: {{ officer_counts|tojson }},
-      backgroundColor: ['#1a56db','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899'],
+      backgroundColor: ['#1E7A4C','#D8B25C','#3ECB82','#D8B25C','#ef4444','#B8934A','#B8934A'],
       borderWidth: 0, hoverOffset: 6
     }]
   },
