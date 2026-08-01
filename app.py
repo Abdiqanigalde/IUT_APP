@@ -14,7 +14,17 @@ from datetime import datetime, timedelta, timezone
 app = Flask(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'iut_secret_key_change_in_prod_2026!'
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError(
+            'SECRET_KEY environment variable is required in production. '
+            'Set it in your Render Environment tab (Render can auto-generate one).'
+        )
+    print('WARNING: SECRET_KEY not set — using an insecure dev-only fallback. '
+          'This is fine for local development but must never happen in production.')
+    _secret_key = 'dev-only-insecure-secret-key-change-me'
+app.config['SECRET_KEY'] = _secret_key
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 database_url = os.environ.get(
@@ -52,7 +62,16 @@ csrf     = CSRFProtect(app)
 db.init_app(app)
 migrate  = Migrate(app, db)
 bcrypt   = Bcrypt(app)
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+_allowed_origin = (
+    os.environ.get('APP_URL')
+    or os.environ.get('RENDER_EXTERNAL_URL')
+    or ('*' if os.environ.get('FLASK_ENV') != 'production' else None)
+)
+if _allowed_origin is None:
+    print('WARNING: Could not determine the app\'s public URL in production — Socket.IO '
+          'CORS is falling back to "*". Set APP_URL to your app\'s URL to lock this down.')
+    _allowed_origin = '*'
+socketio = SocketIO(app, cors_allowed_origins=_allowed_origin, async_mode='threading')
 
 limiter = Limiter(
     get_remote_address,
@@ -93,6 +112,7 @@ with app.app_context():
             role='super_admin',
             email_verified=True,
             is_active=True,
+            must_change_password=True,
         )
         db.session.add(sa)
         db.session.commit()
@@ -453,6 +473,34 @@ with app.app_context():
     except Exception as _rer_err:
         print(f'[IUT] referred exam migration error (non-fatal): {_rer_err}')
 
+    # ── User.must_change_password: column self-heal + flag existing super admins ──
+    try:
+        from sqlalchemy import text, inspect as sa_inspect8
+        user_cols8 = {c['name'] for c in sa_inspect8(db.engine).get_columns('user')}
+        if 'must_change_password' not in user_cols8:
+            with db.engine.connect() as conn:
+                conn.execute(text('ALTER TABLE "user" ADD COLUMN must_change_password BOOLEAN DEFAULT FALSE'))
+                conn.commit()
+            print('[IUT] user.must_change_password column added ✅')
+            # Any super_admin still on the published default password from the README
+            # should be forced to change it now that the column exists.
+            from flask_bcrypt import Bcrypt as _MCPBcrypt
+            _mcp_b = _MCPBcrypt()
+            still_on_default = [
+                u for u in User.query.filter_by(role='super_admin').all()
+                if _mcp_b.check_password_hash(u.password, 'SuperAdmin@2026!')
+            ]
+            for u in still_on_default:
+                u.must_change_password = True
+            if still_on_default:
+                db.session.commit()
+                print(f'[IUT] Flagged {len(still_on_default)} super_admin(s) still on the '
+                      f'default password for a forced change ✅')
+        else:
+            print('[IUT] user.must_change_password already exists — skipping.')
+    except Exception as _mcp_err:
+        print(f'[IUT] must_change_password migration error (non-fatal): {_mcp_err}')
+
     # ── Performance indexes on existing tables ──────────────────────────────────
     # create_all() only creates indexes for brand-new tables — these tables
     # already existed, so we add the indexes explicitly. IF NOT EXISTS makes
@@ -483,6 +531,15 @@ def inject_nav_context():
         from models import Officer
         nav_officer_record = Officer.query.filter_by(email=current_user.email).first()
     return dict(nav_officer_record=nav_officer_record)
+
+
+# ── Force password change ─────────────────────────────────────────────────────
+@app.before_request
+def enforce_password_change():
+    if current_user.is_authenticated and getattr(current_user, 'must_change_password', False):
+        allowed = {'auth.force_change_password', 'auth.logout', 'static'}
+        if flask_request.endpoint not in allowed:
+            return redirect(url_for('auth.force_change_password'))
 
 
 # ── Session timeout ───────────────────────────────────────────────────────────
