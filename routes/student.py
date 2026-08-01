@@ -4,6 +4,7 @@ from models import db, Appointment, User, Officer, Notification, OfficerUnavaila
 from forms import AppointmentForm, ProfileForm, RescheduleForm
 from datetime import datetime, timedelta, timezone
 from flask_bcrypt import Bcrypt
+from services.appointment_service import AppointmentService
 import io, csv
 
 student_bp = Blueprint('student', __name__)
@@ -688,10 +689,6 @@ def get_slots():
             'slots': []
         })
 
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'services'))
-    from appointment_service import AppointmentService
-
     available_slots = AppointmentService.get_available_slots(officer.id, date_obj)
     all_slots       = officer_slots_for_date(officer, date_obj)
     limit_reached   = officer.daily_limit > 0 and daily_count(officer.id, date_obj) >= officer.daily_limit
@@ -735,10 +732,6 @@ def calendar_data():
     import calendar
     days_in_month = calendar.monthrange(year, month)[1]
     result = []
-
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'services'))
-    from appointment_service import AppointmentService
 
     for day in range(1, days_in_month + 1):
         d = datetime(year, month, day).date()
@@ -996,10 +989,7 @@ def ai_suggest():
         return jsonify({'error': 'Please describe your issue first.'}), 400
 
     try:
-        import sys, os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'services'))
-        from ai_suggestions import AISuggestionsService
-        from appointment_service import AppointmentService
+        from services.ai_suggestions import AISuggestionsService
     except ImportError as e:
         return jsonify({'error': f'AI service unavailable: {e}'}), 500
 
