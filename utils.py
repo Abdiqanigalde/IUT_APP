@@ -2,6 +2,22 @@
 import os
 import requests
 from flask import current_app
+from markupsafe import escape as _esc
+
+
+def csv_safe(value):
+    """
+    Neutralize CSV/formula injection. If a cell starts with =, +, -, or @,
+    Excel/Sheets can interpret it as a formula when the file is opened.
+    Prefixing with a single quote forces it to be treated as plain text
+    while keeping the value human-readable.
+    """
+    if value is None:
+        return ''
+    text = str(value)
+    if text and text[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + text
+    return text
 
 
 def send_email(subject, recipients, html_body):
@@ -55,13 +71,13 @@ def appointment_status_email(appointment, status):
         <h2 style="color:white;margin:0;">Appointment {status}</h2>
       </div>
       <div style="padding:30px;">
-        <p>Dear <strong>{appointment.student_name}</strong>,</p>
+        <p>Dear <strong>{_esc(appointment.student_name)}</strong>,</p>
         <p>Your appointment has been <strong>{status.lower()}</strong>.</p>
         <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{appointment.officer.name} ({appointment.officer.designation})</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{_esc(appointment.officer.name)} ({_esc(appointment.officer.designation)})</td></tr>
           <tr><td style="padding:10px;font-weight:bold;">Date</td><td style="padding:10px;">{appointment.date.strftime('%A, %d %B %Y')}</td></tr>
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{appointment.time}</td></tr>
-          <tr><td style="padding:10px;font-weight:bold;">Reason</td><td style="padding:10px;">{appointment.issue}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{_esc(appointment.time)}</td></tr>
+          <tr><td style="padding:10px;font-weight:bold;">Reason</td><td style="padding:10px;">{_esc(appointment.issue)}</td></tr>
         </table>
         <p style="color:#666;font-size:0.9em;">IUT Appointment Management System</p>
       </div>
@@ -75,12 +91,12 @@ def waitlist_promoted_email(appointment, user):
         <h2 style="color:white;margin:0;">Slot Available — Waitlist Promoted</h2>
       </div>
       <div style="padding:30px;">
-        <p>Dear <strong>{user.name}</strong>,</p>
+        <p>Dear <strong>{_esc(user.name)}</strong>,</p>
         <p>A slot you were waitlisted for has opened up. A new appointment has been booked for you.</p>
         <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{appointment.officer.name}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{_esc(appointment.officer.name)}</td></tr>
           <tr><td style="padding:10px;font-weight:bold;">Date</td><td style="padding:10px;">{appointment.date.strftime('%A, %d %B %Y')}</td></tr>
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{appointment.time}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{_esc(appointment.time)}</td></tr>
         </table>
         <p style="color:#666;font-size:0.9em;">IUT Appointment Management System</p>
       </div>
@@ -95,13 +111,13 @@ def booking_confirmation_email(appointment, user):
         <p style="color:rgba(255,255,255,.8);margin:4px 0 0;">Awaiting admin approval</p>
       </div>
       <div style="padding:30px;">
-        <p>Dear <strong>{user.name}</strong>,</p>
+        <p>Dear <strong>{_esc(user.name)}</strong>,</p>
         <p>Your appointment request has been submitted and is now <strong>pending approval</strong>.</p>
         <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{appointment.officer.name} ({appointment.officer.designation})</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{_esc(appointment.officer.name)} ({_esc(appointment.officer.designation)})</td></tr>
           <tr><td style="padding:10px;font-weight:bold;">Date</td><td style="padding:10px;">{appointment.date.strftime('%A, %d %B %Y')}</td></tr>
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{appointment.time}</td></tr>
-          <tr><td style="padding:10px;font-weight:bold;">Reason</td><td style="padding:10px;">{appointment.issue}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{_esc(appointment.time)}</td></tr>
+          <tr><td style="padding:10px;font-weight:bold;">Reason</td><td style="padding:10px;">{_esc(appointment.issue)}</td></tr>
           <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Reference ID</td><td style="padding:10px;">#{appointment.id}</td></tr>
         </table>
         <p>You will receive another email once your appointment is approved or rejected.</p>
@@ -118,13 +134,13 @@ def reminder_email(appointment, user):
         <p style="color:rgba(255,255,255,.9);margin:4px 0 0;">Your appointment is tomorrow</p>
       </div>
       <div style="padding:30px;">
-        <p>Dear <strong>{user.name}</strong>,</p>
+        <p>Dear <strong>{_esc(user.name)}</strong>,</p>
         <p>This is a reminder that you have an approved appointment <strong>tomorrow</strong>.</p>
         <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-          <tr style="background:#fff3cd;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{appointment.officer.name}</td></tr>
+          <tr style="background:#fff3cd;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{_esc(appointment.officer.name)}</td></tr>
           <tr><td style="padding:10px;font-weight:bold;">Date</td><td style="padding:10px;">{appointment.date.strftime('%A, %d %B %Y')}</td></tr>
-          <tr style="background:#fff3cd;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{appointment.time}</td></tr>
-          <tr><td style="padding:10px;font-weight:bold;">Location</td><td style="padding:10px;">{appointment.officer.room or 'Check with the office'}</td></tr>
+          <tr style="background:#fff3cd;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{_esc(appointment.time)}</td></tr>
+          <tr><td style="padding:10px;font-weight:bold;">Location</td><td style="padding:10px;">{_esc(appointment.officer.room) if appointment.officer.room else 'Check with the office'}</td></tr>
         </table>
         <p><strong>Please arrive 5 minutes early</strong> and bring your student ID.</p>
         <p style="color:#666;font-size:.9em;">IUT Appointment Management System</p>
@@ -133,19 +149,19 @@ def reminder_email(appointment, user):
 
 
 def rejection_email(appointment, user, note=''):
-    note_row = f'<tr><td style="padding:10px;font-weight:bold;">Reason</td><td style="padding:10px;color:#dc3545;">{note}</td></tr>' if note else ''
+    note_row = f'<tr><td style="padding:10px;font-weight:bold;">Reason</td><td style="padding:10px;color:#dc3545;">{_esc(note)}</td></tr>' if note else ''
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #eee;border-radius:8px;overflow:hidden;">
       <div style="background:#dc3545;padding:20px;text-align:center;">
         <h2 style="color:white;margin:0;">Appointment Rejected</h2>
       </div>
       <div style="padding:30px;">
-        <p>Dear <strong>{user.name}</strong>,</p>
+        <p>Dear <strong>{_esc(user.name)}</strong>,</p>
         <p>Unfortunately your appointment request has been <strong>rejected</strong>.</p>
         <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{appointment.officer.name}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{_esc(appointment.officer.name)}</td></tr>
           <tr><td style="padding:10px;font-weight:bold;">Date</td><td style="padding:10px;">{appointment.date.strftime('%A, %d %B %Y')}</td></tr>
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{appointment.time}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{_esc(appointment.time)}</td></tr>
           {note_row}
         </table>
         <p>You may book a new appointment at a different time.</p>
@@ -161,7 +177,7 @@ def email_verification_email(user, verify_url):
         <h2 style="color:white;margin:0;">Verify your IUT email</h2>
       </div>
       <div style="padding:30px;">
-        <p>Dear <strong>{user.name}</strong>,</p>
+        <p>Dear <strong>{_esc(user.name)}</strong>,</p>
         <p>Thank you for registering. Please verify your email address by clicking the button below:</p>
         <div style="text-align:center;margin:30px 0;">
           <a href="{verify_url}" style="background:#0d4f3c;color:white;padding:14px 30px;border-radius:6px;text-decoration:none;font-weight:bold;">Verify Email Address</a>
@@ -179,7 +195,7 @@ def password_reset_email(user, reset_url):
         <h2 style="color:white;margin:0;">Password Reset Request</h2>
       </div>
       <div style="padding:30px;">
-        <p>Dear <strong>{user.name}</strong>,</p>
+        <p>Dear <strong>{_esc(user.name)}</strong>,</p>
         <p>We received a request to reset your password. Click below to set a new password:</p>
         <div style="text-align:center;margin:30px 0;">
           <a href="{reset_url}" style="background:#4361ee;color:white;padding:14px 30px;border-radius:6px;text-decoration:none;font-weight:bold;">Reset Password</a>
@@ -192,11 +208,11 @@ def password_reset_email(user, reset_url):
 
 def qr_appointment_email(appointment, user, qr_base64):
     qr_info = f"""Appointment ID: {appointment.id}
-Student: {user.name}
-Officer: {appointment.officer.name}
+Student: {_esc(user.name)}
+Officer: {_esc(appointment.officer.name)}
 Date: {appointment.date.strftime('%d %B %Y')}
-Time: {appointment.time}
-Room: {appointment.officer.room or 'N/A'}
+Time: {_esc(appointment.time)}
+Room: {_esc(appointment.officer.room) if appointment.officer.room else 'N/A'}
 Status: Approved"""
 
     return f"""
@@ -206,12 +222,12 @@ Status: Approved"""
         <p style="color:rgba(255,255,255,.8);margin:4px 0 0;">Appointment #{appointment.id} — Present this at check-in</p>
       </div>
       <div style="padding:30px;text-align:center;">
-        <p>Dear <strong>{user.name}</strong>, your appointment has been <strong>Approved</strong>.</p>
+        <p>Dear <strong>{_esc(user.name)}</strong>, your appointment has been <strong>Approved</strong>.</p>
         <table style="width:100%;border-collapse:collapse;margin:16px 0;text-align:left;">
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{appointment.officer.name}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Officer</td><td style="padding:10px;">{_esc(appointment.officer.name)}</td></tr>
           <tr><td style="padding:10px;font-weight:bold;">Date</td><td style="padding:10px;">{appointment.date.strftime('%A, %d %B %Y')}</td></tr>
-          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{appointment.time}</td></tr>
-          <tr><td style="padding:10px;font-weight:bold;">Location</td><td style="padding:10px;">{appointment.officer.room or 'Check with office'}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:10px;font-weight:bold;">Time</td><td style="padding:10px;">{_esc(appointment.time)}</td></tr>
+          <tr><td style="padding:10px;font-weight:bold;">Location</td><td style="padding:10px;">{_esc(appointment.officer.room) if appointment.officer.room else 'Check with office'}</td></tr>
         </table>
         <p style="font-weight:bold;">Show this QR code to the officer for check-in:</p>
         <img src="data:image/png;base64,{qr_base64}" alt="QR Code"
