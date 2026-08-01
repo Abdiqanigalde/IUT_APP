@@ -195,3 +195,18 @@ def resend_verification():
         send_email('Verify your IUT email', [user.email], email_verification_email(user, verify_url))
     flash('If that address is registered and unverified, a new link has been sent.', 'info')
     return redirect(url_for('auth.login'))
+
+# ── Forced password change (e.g. seed super_admin still on the default password) ──
+@auth_bp.route('/force-change-password', methods=['GET', 'POST'])
+@login_required
+def force_change_password():
+    if not getattr(current_user, 'must_change_password', False):
+        return redirect(url_for('index'))
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        current_user.password = bcrypt.generate_password_hash(form.new_password.data).decode('utf-8')
+        current_user.must_change_password = False
+        db.session.commit()
+        flash('Password updated. Welcome back!', 'success')
+        return redirect(url_for('index'))
+    return render_template('force_change_password.html', title='Change Your Password', form=form)
