@@ -2,7 +2,7 @@
 {% block content %}
 <style>
   .re-hero {
-    background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 60%, #6d28d9 100%);
+    background: linear-gradient(135deg, #6B5226 0%, #B8934A 60%, #A67F3D 100%);
     border-radius: 16px;
     padding: 40px 36px 32px;
     color: white;
@@ -30,7 +30,7 @@
     overflow: hidden;
   }
   .step-header {
-    background: linear-gradient(90deg, #4c1d95, #7c3aed);
+    background: linear-gradient(90deg, #6B5226, #B8934A);
     color: white;
     padding: 14px 20px;
     display: flex;
@@ -55,9 +55,9 @@
     align-items: flex-start;
     gap: 14px;
   }
-  .status-banner.pending   { background: #fff8e1; border-left: 5px solid #f59e0b; }
-  .status-banner.ready     { background: #f5f3ff; border-left: 5px solid #7c3aed; }
-  .status-banner.collected { background: #e8f5e9; border-left: 5px solid #22c55e; }
+  .status-banner.pending   { background: #fff8e1; border-left: 5px solid #D8B25C; }
+  .status-banner.ready     { background: #FBF6E9; border-left: 5px solid #B8934A; }
+  .status-banner.collected { background: #e8f5e9; border-left: 5px solid #3ECB82; }
   .status-banner.rejected  { background: #fef2f2; border-left: 5px solid #ef4444; }
   .status-icon { font-size: 1.8rem; flex-shrink: 0; }
   .status-banner .status-title { font-weight: 700; font-size: 1rem; margin-bottom: 2px; }
@@ -75,12 +75,12 @@
   @media (max-width: 576px) { .course-row { grid-template-columns: 1fr; } }
   .course-row .course-num {
     width: 26px; height: 26px; border-radius: 50%;
-    background: #ede9fe; color: #5b21b6; font-weight: 700; font-size: .75rem;
+    background: #F3E7C9; color: #8F6F32; font-weight: 700; font-size: .75rem;
     display: flex; align-items: center; justify-content: center;
   }
 
   .submit-btn {
-    background: linear-gradient(135deg, #4c1d95, #7c3aed);
+    background: linear-gradient(135deg, #6B5226, #B8934A);
     color: white; border: none; border-radius: 10px;
     padding: 12px 28px; font-size: .95rem; font-weight: 600;
     display: inline-flex; align-items: center; gap: 8px;
@@ -97,7 +97,7 @@
     padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 10px;
     margin-bottom: 8px; background: white;
   }
-  .course-item .course-code { font-weight: 700; color: #4c1d95; }
+  .course-item .course-code { font-weight: 700; color: #6B5226; }
   .course-item .course-title { color: #6b7280; font-size: .85rem; }
 </style>
 
@@ -267,8 +267,8 @@
             {% if officer.photo_display_url() %}
               <img src="{{ officer.photo_display_url() }}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover;">
             {% else %}
-              <div style="width:48px;height:48px;border-radius:50%;background:#ede9fe;display:flex;align-items:center;justify-content:center;">
-                <i class="fas fa-user" style="color:#7c3aed;"></i>
+              <div style="width:48px;height:48px;border-radius:50%;background:#F3E7C9;display:flex;align-items:center;justify-content:center;">
+                <i class="fas fa-user" style="color:#B8934A;"></i>
               </div>
             {% endif %}
             <div>
