@@ -7,7 +7,8 @@ mark no-show, report booking, cancel event.
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
 from flask_login import login_required, current_user
 from models import db, Appointment, Officer, Notification, User, OfficerUnavailability, AuditLog
-from datetime import datetime, date, timezone
+from forms import OfficerUnavailabilityForm
+from datetime import datetime, date, timedelta, timezone
 
 officer_bp = Blueprint('officer', __name__, url_prefix='/officer')
 
@@ -173,6 +174,86 @@ def schedule():
         .filter(Appointment.date >= datetime.now(timezone.utc).date())\
         .order_by(Appointment.date, Appointment.time).all()
     return render_template('officer/schedule.html', officer=officer, appointments=apts)
+
+
+# ── Self-service unavailability ─────────────────────────────────────────────────
+
+@officer_bp.route('/unavailability', methods=['GET', 'POST'])
+@login_required
+@officer_required
+def unavailability():
+    officer = get_officer_record()
+    if not officer:
+        flash('No officer profile found.', 'warning')
+        return redirect(url_for('officer.dashboard'))
+
+    form = OfficerUnavailabilityForm()
+    if form.validate_on_submit():
+        if form.end_date.data < form.start_date.data:
+            flash('End date cannot be before start date.', 'danger')
+        else:
+            span_days = (form.end_date.data - form.start_date.data).days
+            if span_days > 366:
+                flash('Date range is too large (max 1 year). Please narrow it down.', 'danger')
+                return redirect(url_for('officer.unavailability'))
+
+            from routes.admin import _cancel_affected_appointments
+
+            if form.mode.data == 'recurring':
+                weekday = form.recurring_weekday.data
+                occurrence_dates = []
+                d = form.start_date.data
+                while d <= form.end_date.data:
+                    if d.weekday() == weekday:
+                        occurrence_dates.append(d)
+                    d += timedelta(days=1)
+                if not occurrence_dates:
+                    flash('No matching dates found in that range for the selected weekday.', 'warning')
+                    return redirect(url_for('officer.unavailability'))
+                weekday_name = dict(form.recurring_weekday.choices)[weekday]
+                note = f"{form.reason.data} (recurring: every {weekday_name})"
+                date_ranges = [(dt, dt) for dt in occurrence_dates]
+            else:
+                note = form.reason.data
+                date_ranges = [(form.start_date.data, form.end_date.data)]
+
+            for (s, e) in date_ranges:
+                db.session.add(OfficerUnavailability(officer_id=officer.id, start_date=s,
+                                                       end_date=e, reason=note))
+            db.session.commit()
+
+            total_cancelled = 0
+            for (s, e) in date_ranges:
+                total_cancelled += len(_cancel_affected_appointments(officer, s, e, note))
+
+            db.session.add(AuditLog(admin_id=current_user.id, action='unavailability_added',
+                detail=f"{officer.name} self-marked unavailable "
+                       f"{form.start_date.data}–{form.end_date.data} ({form.mode.data}): {form.reason.data}"))
+            db.session.commit()
+
+            flash(f'Unavailability added. {total_cancelled} appointment(s) cancelled.', 'success')
+            return redirect(url_for('officer.unavailability'))
+
+    periods = OfficerUnavailability.query.filter_by(officer_id=officer.id)\
+        .order_by(OfficerUnavailability.start_date).all()
+    today = datetime.now(timezone.utc).date()
+    return render_template('officer/unavailability.html', officer=officer, form=form,
+                           periods=periods, today=today)
+
+
+@officer_bp.route('/unavailability/delete/<int:period_id>')
+@login_required
+@officer_required
+def delete_unavailability(period_id):
+    officer = get_officer_record()
+    period = db.session.get(OfficerUnavailability, period_id)
+    if not officer or not period or period.officer_id != officer.id:
+        flash('Not authorized.', 'danger')
+        return redirect(url_for('officer.unavailability'))
+    db.session.delete(period)
+    db.session.commit()
+    flash('Unavailability removed.', 'success')
+    return redirect(url_for('officer.unavailability'))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
