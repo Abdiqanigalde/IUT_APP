@@ -307,6 +307,69 @@ def cancel_appointment(appointment_id):
     return redirect(url_for('student.dashboard'))
 
 
+# ── Appointment history / timeline ──────────────────────────────────────────────
+
+@student_bp.route('/student/history')
+@login_required
+def appointment_history():
+    appointments = (
+        Appointment.query
+        .filter_by(user_id=current_user.id)
+        .order_by(Appointment.created_at.desc())
+        .all()
+    )
+    return render_template('student/appointment_timeline.html', appointments=appointments)
+
+
+# ── Feedback ──────────────────────────────────────────────────────────────────
+
+@student_bp.route('/student/feedback/<int:appointment_id>')
+@login_required
+def feedback_form(appointment_id):
+    apt = Appointment.query.filter_by(id=appointment_id, user_id=current_user.id).first()
+    if not apt:
+        flash('Appointment not found.', 'danger')
+        return redirect(url_for('student.appointment_history'))
+    if apt.status != 'Completed':
+        flash('Feedback can only be left for completed appointments.', 'warning')
+        return redirect(url_for('student.appointment_history'))
+    if apt.feedback:
+        flash('You already left feedback for this appointment.', 'info')
+        return redirect(url_for('student.appointment_history'))
+    return render_template('student/feedback_form.html', appointment=apt)
+
+
+@student_bp.route('/student/feedback/submit', methods=['POST'])
+@login_required
+def submit_feedback():
+    appointment_id = request.form.get('appointment_id', type=int)
+    apt = Appointment.query.filter_by(id=appointment_id, user_id=current_user.id).first()
+    if not apt or apt.status != 'Completed':
+        flash('Invalid appointment.', 'danger')
+        return redirect(url_for('student.appointment_history'))
+    if apt.feedback:
+        flash('You already left feedback for this appointment.', 'info')
+        return redirect(url_for('student.appointment_history'))
+
+    rating = request.form.get('rating', type=int)
+    if not rating or not (1 <= rating <= 5):
+        flash('Please select a star rating.', 'warning')
+        return redirect(url_for('student.feedback_form', appointment_id=appointment_id))
+
+    comments = (request.form.get('comments') or '').strip()[:2000] or None
+    from models import Feedback
+    db.session.add(Feedback(
+        appointment_id=apt.id,
+        student_id=current_user.id,
+        officer_id=apt.officer_id,
+        rating=rating,
+        comments=comments,
+    ))
+    db.session.commit()
+    flash('Thanks for your feedback!', 'success')
+    return redirect(url_for('student.appointment_history'))
+
+
 # ── Reschedule ────────────────────────────────────────────────────────────────
 
 @student_bp.route('/student/reschedule/<int:appointment_id>', methods=['GET', 'POST'])
