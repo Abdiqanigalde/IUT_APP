@@ -43,6 +43,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_recycle':  300,
 }
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB cap on any single request body (uploads: visa docs, officer photos)
 
 # ── Email (Brevo HTTP API — see utils.send_email) ──────────────────────────────
 # The app sends all mail through Brevo's HTTP API, not SMTP, because Render's
@@ -633,6 +634,9 @@ def forbidden(e):    return render_template('errors/403.html'), 403
 
 @app.errorhandler(429)
 def rate_limited(e): return render_template('errors/429.html'), 429
+
+@app.errorhandler(413)
+def too_large(e):    return render_template('errors/413.html'), 413
 
 
 # ── Blueprints ────────────────────────────────────────────────────────────────
