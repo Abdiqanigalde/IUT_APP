@@ -1,0 +1,113 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h3 class="page-title"><i class="fas fa-star me-2 text-warning"></i>Student Feedback</h3>
+        <p class="page-subtitle">Ratings and comments students leave on completed appointments.</p>
+    </div>
+</div>
+
+{% if overall_avg %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+        <div class="stat-card">
+            <div class="stat-icon warning"><i class="fas fa-star"></i></div>
+            <div>
+                <div class="stat-val">{{ "%.1f"|format(overall_avg) }}</div>
+                <div class="stat-label">{{ 'This Officer' if officer_filter else 'Overall Avg Rating' }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="stat-card">
+            <div class="stat-icon primary"><i class="fas fa-comment-dots"></i></div>
+            <div>
+                <div class="stat-val">{{ entries|length }}</div>
+                <div class="stat-label">Total Responses</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row">
+    <!-- Per-officer summary -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">Average by Officer</div>
+            <div class="card-body p-0">
+                {% if summary_rows %}
+                <table class="table table-hover mb-0">
+                    <tbody>
+                        {% for officer_id, officer_name, avg_rating, count in summary_rows %}
+                        <tr>
+                            <td class="ps-3">
+                                <a href="{{ url_for('admin.view_feedback', officer_id=officer_id) }}"
+                                   class="{{ 'fw-bold' if officer_filter == officer_id else '' }}">{{ officer_name }}</a>
+                                <div class="text-muted small">{{ count }} response(s)</div>
+                            </td>
+                            <td class="text-end pe-3">
+                                <span class="badge bg-warning text-dark">{{ "%.1f"|format(avg_rating) }} <i class="fas fa-star"></i></span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="text-center py-4 text-muted">No feedback submitted yet.</div>
+                {% endif %}
+            </div>
+        </div>
+        {% if officer_filter %}
+        <a href="{{ url_for('admin.view_feedback') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-times me-1"></i>Clear filter
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Feedback entries -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>{{ 'Feedback' if not officer_filter else 'Feedback for selected officer' }}</span>
+                <span class="badge bg-secondary">{{ entries|length }} entr{{ 'y' if entries|length == 1 else 'ies' }}</span>
+            </div>
+            <div class="card-body p-0">
+                {% if entries %}
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Date</th>
+                            <th>Officer</th>
+                            <th>Student</th>
+                            <th>Rating</th>
+                            <th>Comments</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in entries %}
+                        <tr>
+                            <td class="ps-3 text-nowrap">{{ f.created_at.strftime('%d %b %Y') }}</td>
+                            <td>{{ f.officer.name }}</td>
+                            <td>{{ f.student.name }}</td>
+                            <td class="text-nowrap">
+                                {% for i in range(5) %}
+                                    <i class="fas fa-star" style="color:{{ '#D8B25C' if i < f.rating else 'var(--border)' }};font-size:.8rem;"></i>
+                                {% endfor %}
+                            </td>
+                            <td style="max-width:280px;">{{ f.comments or '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="fas fa-comment-slash fa-3x mb-3"></i>
+                    <p class="mb-0">No feedback submitted{{ ' for this officer' if officer_filter else '' }} yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
