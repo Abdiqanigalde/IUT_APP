@@ -87,18 +87,18 @@
                                 </div>
                                 {% elif appointment.status == 'Completed' %}
                                 <hr>
-                                <a href="/student/feedback/{{ appointment.id }}" class="btn btn-sm btn-primary">Leave Feedback</a>
+                                <a href="{{ url_for('student.feedback_form', appointment_id=appointment.id) }}" class="btn btn-sm btn-primary">Leave Feedback</a>
                                 {% endif %}
 
                                 <!-- Actions -->
                                 <hr>
                                 <div class="action-buttons">
                                     {% if appointment.status in ['Pending', 'Approved'] %}
-                                    <a href="/student/reschedule/{{ appointment.id }}" class="btn btn-sm btn-warning">Reschedule</a>
-                                    <a href="/student/cancel/{{ appointment.id }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')">Cancel</a>
+                                    <a href="{{ url_for('student.reschedule_appointment', appointment_id=appointment.id) }}" class="btn btn-sm btn-warning">Reschedule</a>
+                                    <a href="{{ url_for('student.cancel_appointment', appointment_id=appointment.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')">Cancel</a>
                                     {% endif %}
-                                    <a href="/student/appointment/{{ appointment.id }}/print" class="btn btn-sm btn-info">Print Slip</a>
-                                    <a href="/student/appointment/{{ appointment.id }}/download-qr" class="btn btn-sm btn-secondary">Download QR Code</a>
+                                    <a href="{{ url_for('student.print_slip', appointment_id=appointment.id) }}" class="btn btn-sm btn-info">Print Slip</a>
+                                    <a href="{{ url_for('student.qr_image', appointment_id=appointment.id) }}" download class="btn btn-sm btn-secondary">Download QR Code</a>
                                 </div>
                             </div>
                         </div>
@@ -110,7 +110,7 @@
     </div>
     {% else %}
     <div class="alert alert-info">
-        You don't have any appointments yet. <a href="/student/officers">Browse officers</a> to book one.
+        You don't have any appointments yet. <a href="{{ url_for('student.office_list') }}">Browse officers</a> to book one.
     </div>
     {% endif %}
 </div>
