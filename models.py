@@ -215,7 +215,7 @@ class Feedback(db.Model):
     rating          = db.Column(db.Integer, nullable=False)
     comments        = db.Column(db.Text,    nullable=True)
     created_at      = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    appointment     = db.relationship('Appointment', backref='feedback', uselist=False)
+    appointment     = db.relationship('Appointment', backref=db.backref('feedback', uselist=False))
     student         = db.relationship('User',    backref='feedback_given')
     officer         = db.relationship('Officer', backref='feedback_received')
 
