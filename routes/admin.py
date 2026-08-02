@@ -834,6 +834,43 @@ def delete_holiday(holiday_id):
     return redirect(url_for('admin.manage_holidays'))
 
 
+# ── Feedback ──────────────────────────────────────────────────────────────────
+
+@admin_bp.route('/admin/feedback')
+@login_required
+@admin_required
+def view_feedback():
+    from models import Feedback
+    from sqlalchemy import func
+
+    officer_filter = request.args.get('officer_id', type=int)
+
+    query = Feedback.query.order_by(Feedback.created_at.desc())
+    if officer_filter:
+        query = query.filter_by(officer_id=officer_filter)
+    entries = query.all()
+
+    # Per-officer average rating + count, for the summary cards at the top.
+    summary_rows = (
+        db.session.query(
+            Officer.id, Officer.name,
+            func.avg(Feedback.rating).label('avg_rating'),
+            func.count(Feedback.id).label('count')
+        )
+        .join(Feedback, Feedback.officer_id == Officer.id)
+        .group_by(Officer.id, Officer.name)
+        .order_by(func.avg(Feedback.rating).desc())
+        .all()
+    )
+
+    all_officers = Officer.query.order_by(Officer.name).all()
+    overall_avg = (sum(e.rating for e in entries) / len(entries)) if entries else None
+
+    return render_template('admin/feedback.html', entries=entries, summary_rows=summary_rows,
+                           all_officers=all_officers, officer_filter=officer_filter,
+                           overall_avg=overall_avg)
+
+
 def _holiday_cancellation_email(apt, student, title, start_date, end_date, reason):
     duration    = (end_date - start_date).days + 1
     reason_line = f"<p><strong>Reason:</strong> {reason}</p>" if reason else ""
