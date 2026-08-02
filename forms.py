@@ -122,6 +122,20 @@ class UnavailabilityForm(FlaskForm):
     reason = StringField('Reason', validators=[DataRequired(), Length(max=255)])
     submit = SubmitField('Mark Unavailable')
 
+class BulkUnavailabilityForm(FlaskForm):
+    officer_ids = SelectMultipleField('Officers', coerce=int, validators=[DataRequired()])
+    mode = SelectField('Type', choices=[('range', 'Single date range'),
+                                         ('recurring', 'Recurring weekly')],
+                        default='range')
+    start_date = DateField('From Date', validators=[DataRequired()])
+    end_date = DateField('To Date', validators=[DataRequired()])
+    recurring_weekday = SelectField('Repeats every', coerce=int,
+        choices=[(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),
+                 (4,'Friday'),(5,'Saturday'),(6,'Sunday')],
+        validators=[Optional()])
+    reason = StringField('Reason', validators=[DataRequired(), Length(max=255)])
+    submit = SubmitField('Apply Unavailability')
+
 class OfficerProfileForm(FlaskForm):
     name = StringField('Officer Name', validators=[DataRequired()])
     designation = StringField('Designation', validators=[DataRequired()])
