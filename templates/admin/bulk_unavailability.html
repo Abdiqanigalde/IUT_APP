@@ -1,0 +1,99 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('admin.manage_officers') }}" class="btn btn-outline-secondary btn-sm me-3">
+        <i class="fas fa-arrow-left"></i>
+    </a>
+    <div>
+        <h3 class="fw-bold mb-0"><i class="fas fa-calendar-xmark me-2 text-danger"></i>Bulk Unavailability</h3>
+        <p class="text-muted mb-0">Mark multiple officers unavailable at once, as a single range or a recurring weekly pattern.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card p-4 mb-4">
+            <form method="POST" id="bulkForm">
+                {{ form.hidden_tag() }}
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Officers</label>
+                    <div style="max-height:220px;overflow-y:auto;border:1.5px solid var(--border);border-radius:8px;padding:10px;">
+                        {% for value, label in form.officer_ids.choices %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="officer_ids"
+                                   value="{{ value }}" id="off_{{ value }}"
+                                   {% if form.officer_ids.data and value in form.officer_ids.data %}checked{% endif %}>
+                            <label class="form-check-label" for="off_{{ value }}">{{ label }}</label>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0 small">No active officers found.</p>
+                        {% endfor %}
+                    </div>
+                    {% for e in form.officer_ids.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+                </div>
+
+                <div class="mb-3">
+                    {{ form.mode.label(class="form-label fw-semibold") }}
+                    {{ form.mode(class="form-select", id="modeSelect") }}
+                </div>
+
+                <div class="mb-3">
+                    {{ form.start_date.label(class="form-label fw-semibold") }}
+                    {{ form.start_date(class="form-control", type="date") }}
+                    {% for e in form.start_date.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+                </div>
+                <div class="mb-3">
+                    {{ form.end_date.label(class="form-label fw-semibold") }}
+                    {{ form.end_date(class="form-control", type="date") }}
+                    {% for e in form.end_date.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+                </div>
+
+                <div class="mb-3" id="weekdayField" style="display:none;">
+                    {{ form.recurring_weekday.label(class="form-label fw-semibold") }}
+                    {{ form.recurring_weekday(class="form-select") }}
+                    <div class="form-text">Applied on every matching day within the date range above.</div>
+                </div>
+
+                <div class="mb-3">
+                    {{ form.reason.label(class="form-label fw-semibold") }}
+                    {{ form.reason(class="form-control", placeholder="e.g. Conference, Institution-wide training") }}
+                    {% for e in form.reason.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+                </div>
+
+                <div class="d-grid">
+                    {{ form.submit(class="btn btn-danger") }}
+                </div>
+            </form>
+        </div>
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Note:</strong> This cancels all pending/approved appointments that fall within the affected dates for every selected officer, and notifies each student by email.
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card p-4">
+            <h5 class="fw-bold mb-3"><i class="fas fa-circle-info me-2 text-primary"></i>How this works</h5>
+            <ul class="mb-0" style="line-height:1.9;">
+                <li><strong>Single date range</strong> — every selected officer is unavailable for the entire span, e.g. an out-of-office week.</li>
+                <li><strong>Recurring weekly</strong> — pick a weekday (e.g. every Wednesday) and a date range, e.g. "every Wednesday from Sep 1–Dec 15" for a standing commitment. This creates one unavailability entry per matching date, so it shows up correctly on each officer's calendar.</li>
+                <li>To mark <em>every</em> officer unavailable for a university-wide holiday, use <a href="{{ url_for('admin.manage_holidays') }}">Holidays</a> instead — it's built for that and doesn't require selecting officers individually.</li>
+                <li>To manage a single officer's periods one at a time, go to their <a href="{{ url_for('admin.manage_officers') }}">officer page</a> and use "Manage Unavailability".</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modeSelect = document.getElementById('modeSelect');
+    const weekdayField = document.getElementById('weekdayField');
+    function syncWeekdayField() {
+        weekdayField.style.display = modeSelect.value === 'recurring' ? 'block' : 'none';
+    }
+    modeSelect.addEventListener('change', syncWeekdayField);
+    syncWeekdayField();
+});
+</script>
+{% endblock %}
