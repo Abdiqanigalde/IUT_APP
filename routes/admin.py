@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, Response, jsonify
 from flask_login import login_required, current_user
 from models import db, Appointment, User, Officer, Office, Notification, OfficerUnavailability, AuditLog, OfficerWorkingHours, GlobalHoliday
-from forms import OfficerForm, UnavailabilityForm, WorkingHoursForm, RejectNoteForm, OfficerProfileForm, OfficeForm
+from forms import OfficerForm, UnavailabilityForm, BulkUnavailabilityForm, WorkingHoursForm, RejectNoteForm, OfficerProfileForm, OfficeForm
 from routes.visa import upload_to_cloudinary
 from datetime import datetime, timedelta, timezone
 import csv, io
@@ -548,6 +548,29 @@ def manage_hours(officer_id):
     return render_template('admin/working_hours.html', officer=officer, form=form, hours=hours, days=days)
 
 # ── Unavailability ────────────────────────────────────────────────────────────
+
+def _cancel_affected_appointments(officer, start_date, end_date, reason):
+    """Reject any Pending/Approved appointments that fall inside a new
+    unavailability window, and notify the affected students. Shared by the
+    single-officer and bulk unavailability flows so the behavior stays identical."""
+    affected = Appointment.query.filter(
+        Appointment.officer_id == officer.id,
+        Appointment.date >= start_date,
+        Appointment.date <= end_date,
+        Appointment.status.in_(['Pending', 'Approved'])
+    ).all()
+    for apt in affected:
+        apt.status         = 'Rejected'
+        apt.rejection_note = reason
+        db.session.add(Notification(user_id=apt.user_id,
+            message=f"Your appointment with {officer.name} on {apt.date} was cancelled: {reason}"))
+        student = db.session.get(User, apt.user_id)
+        from utils import send_email, rejection_email
+        send_email("Appointment Cancelled — IUT", [student.email],
+                   rejection_email(apt, student, reason))
+    return affected
+
+
 @admin_bp.route('/admin/officer/<int:officer_id>/unavailability', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -562,21 +585,8 @@ def manage_unavailability(officer_id):
                                       end_date=form.end_date.data, reason=form.reason.data)
             db.session.add(u)
             db.session.commit()
-            affected = Appointment.query.filter(
-                Appointment.officer_id == officer.id,
-                Appointment.date >= form.start_date.data,
-                Appointment.date <= form.end_date.data,
-                Appointment.status.in_(['Pending', 'Approved'])
-            ).all()
-            for apt in affected:
-                apt.status         = 'Rejected'
-                apt.rejection_note = form.reason.data
-                db.session.add(Notification(user_id=apt.user_id,
-                    message=f"Your appointment with {officer.name} on {apt.date} was cancelled: {form.reason.data}"))
-                student = db.session.get(User, apt.user_id)
-                from utils import send_email, rejection_email
-                send_email("Appointment Cancelled — IUT", [student.email],
-                           rejection_email(apt, student, form.reason.data))
+            affected = _cancel_affected_appointments(officer, form.start_date.data,
+                                                       form.end_date.data, form.reason.data)
             log_action('unavailability_added',
                 f"{officer.name} unavailable {form.start_date.data}–{form.end_date.data}: {form.reason.data}")
             db.session.commit()
@@ -586,6 +596,67 @@ def manage_unavailability(officer_id):
         .order_by(OfficerUnavailability.start_date).all()
     today = datetime.now(timezone.utc).date()
     return render_template('admin/unavailability.html', officer=officer, form=form, periods=periods, today=today)
+
+
+@admin_bp.route('/admin/unavailability/bulk', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def bulk_unavailability():
+    officers = Officer.query.filter_by(is_active=True).order_by(Officer.name).all()
+    form = BulkUnavailabilityForm()
+    form.officer_ids.choices = [(o.id, f"{o.name} ({o.designation})") for o in officers]
+
+    if form.validate_on_submit():
+        if form.end_date.data < form.start_date.data:
+            flash('End date cannot be before start date.', 'danger')
+            return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
+
+        span_days = (form.end_date.data - form.start_date.data).days
+        if span_days > 366:
+            flash('Date range is too large (max 1 year). Please narrow it down.', 'danger')
+            return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
+
+        selected_officers = Officer.query.filter(Officer.id.in_(form.officer_ids.data)).all()
+
+        # Work out the concrete date range(s) this applies to.
+        if form.mode.data == 'recurring':
+            weekday = form.recurring_weekday.data
+            occurrence_dates = []
+            d = form.start_date.data
+            while d <= form.end_date.data:
+                if d.weekday() == weekday:
+                    occurrence_dates.append(d)
+                d += timedelta(days=1)
+            if not occurrence_dates:
+                flash('No matching dates found in that range for the selected weekday.', 'warning')
+                return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
+            weekday_name = dict(form.recurring_weekday.choices)[weekday]
+            note = f"{form.reason.data} (recurring: every {weekday_name})"
+            date_ranges = [(dt, dt) for dt in occurrence_dates]
+        else:
+            note = form.reason.data
+            date_ranges = [(form.start_date.data, form.end_date.data)]
+
+        total_periods = 0
+        total_cancelled = 0
+        for officer in selected_officers:
+            for (s, e) in date_ranges:
+                db.session.add(OfficerUnavailability(officer_id=officer.id, start_date=s,
+                                                       end_date=e, reason=note))
+                total_periods += 1
+            db.session.commit()
+            for (s, e) in date_ranges:
+                total_cancelled += len(_cancel_affected_appointments(officer, s, e, note))
+
+        log_action('bulk_unavailability_added',
+            f"{len(selected_officers)} officer(s) marked unavailable "
+            f"{form.start_date.data}–{form.end_date.data} ({form.mode.data}): {form.reason.data}")
+        db.session.commit()
+        flash(f'Applied unavailability across {len(selected_officers)} officer(s), '
+              f'{total_periods} period(s) created, {total_cancelled} appointment(s) cancelled.', 'success')
+        return redirect(url_for('admin.bulk_unavailability'))
+
+    return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
 
 
 @admin_bp.route('/admin/unavailability/delete/<int:period_id>')
