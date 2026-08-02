@@ -517,6 +517,7 @@
                         {% if not (nav_officer_record and nav_officer_record.handles_referred_exam) %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.dashboard') }}"><i class="fas fa-home"></i>Dashboard</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.schedule') }}"><i class="fas fa-calendar-alt"></i>Schedule</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.unavailability') }}"><i class="fas fa-calendar-xmark"></i>Unavailability</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('officer.scan_page') }}"><i class="fas fa-qrcode"></i>Scan QR</a></li>
                         {% endif %}
                         {% if nav_officer_record and nav_officer_record.handles_referred_exam %}
