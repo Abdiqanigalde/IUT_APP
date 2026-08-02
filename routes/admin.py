@@ -196,6 +196,9 @@ def update_status(appointment_id, status):
         if form.validate_on_submit():
             apt.status = 'Rejected'
             apt.rejection_note = form.rejection_note.data
+            from models import AppointmentTimeline
+            db.session.add(AppointmentTimeline(appointment_id=apt.id, status='Rejected',
+                                               note=form.rejection_note.data))
             msg = f"Your appointment with {apt.officer.name} on {apt.date.strftime('%d %b %Y')} was rejected. Reason: {form.rejection_note.data}"
             db.session.add(Notification(user_id=apt.user_id, message=msg))
             student = db.session.get(User, apt.user_id)
