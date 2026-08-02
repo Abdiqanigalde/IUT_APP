@@ -4,11 +4,29 @@ from wtforms import (StringField, PasswordField, SubmitField, SelectField,
                      TextAreaField, DateField, IntegerField, TimeField, BooleanField, SelectMultipleField)
 from wtforms.validators import DataRequired, Email, EqualTo, Length, ValidationError, Optional, NumberRange
 from models import User
+import re
+
+
+def password_strength(form, field):
+    """Shared password policy: 8+ chars, at least one upper, one lower, one digit.
+    Skips silently on empty data so it composes cleanly with Optional()."""
+    pw = field.data or ''
+    if not pw:
+        return
+    if len(pw) < 8:
+        raise ValidationError('Password must be at least 8 characters long.')
+    if not re.search(r'[A-Z]', pw):
+        raise ValidationError('Password must contain at least one uppercase letter.')
+    if not re.search(r'[a-z]', pw):
+        raise ValidationError('Password must contain at least one lowercase letter.')
+    if not re.search(r'[0-9]', pw):
+        raise ValidationError('Password must contain at least one number.')
 
 class RegistrationForm(FlaskForm):
     name = StringField('Full Name', validators=[DataRequired(), Length(min=2, max=100)])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
+    password = PasswordField('Password (min 8 chars, upper/lower/number)',
+                              validators=[DataRequired(), password_strength])
     confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
     # SECURITY: Only 'student' is offered publicly. Admin/Officer created by Super Admin only.
     role = SelectField('Role', choices=[('student', 'Student')], validators=[DataRequired()])
@@ -77,7 +95,8 @@ class ProfileForm(FlaskForm):
     student_id_num = StringField('Student ID', validators=[Optional()])
     department = StringField('Department', validators=[Optional()])
     current_password = PasswordField('Current Password', validators=[Optional()])
-    new_password = PasswordField('New Password (min 6 chars)', validators=[Optional(), Length(min=6)])
+    new_password = PasswordField('New Password (min 8 chars, upper/lower/number)',
+                                  validators=[Optional(), password_strength])
     confirm_new_password = PasswordField('Confirm New Password',
         validators=[EqualTo('new_password', message='New passwords must match.')])
     submit = SubmitField('Update Profile')
@@ -91,7 +110,8 @@ class ForgotPasswordForm(FlaskForm):
     submit = SubmitField('Send Reset Link')
 
 class ResetPasswordForm(FlaskForm):
-    new_password = PasswordField('New Password', validators=[DataRequired(), Length(min=6)])
+    new_password = PasswordField('New Password (min 8 chars, upper/lower/number)',
+                                  validators=[DataRequired(), password_strength])
     confirm_password = PasswordField('Confirm Password',
         validators=[DataRequired(), EqualTo('new_password', message='Passwords must match.')])
     submit = SubmitField('Reset Password')
@@ -110,7 +130,8 @@ class OfficerProfileForm(FlaskForm):
     handles = StringField('Issues Handled (comma-separated)', validators=[Optional(), Length(max=300)])
     email = StringField('Office Email', validators=[Optional(), Email()])
     login_email = StringField('Login Email (for officer portal)', validators=[DataRequired(), Email()])
-    login_password = PasswordField('Login Password', validators=[DataRequired(), Length(min=6)])
+    login_password = PasswordField('Login Password (min 8 chars, upper/lower/number)',
+                                    validators=[DataRequired(), password_strength])
     photo = FileField('Upload Photo', validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'webp'], 'Images only (jpg, jpeg, png, webp)!')])
     photo_url = StringField('Or Photo Filename (legacy — leave blank if uploading above)', validators=[Optional(), Length(max=255)])
     room = StringField('Room / Office Location', validators=[Optional()])
