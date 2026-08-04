@@ -17,10 +17,15 @@
           {{ form.description.label(class="form-label small fw-semibold") }}
           {{ form.description(class="form-control form-control-sm", placeholder="e.g. Academic records, transcripts, registration") }}
         </div>
-        <div class="mb-3">
+        <div class="mb-2">
           {{ form.icon.label(class="form-label small fw-semibold") }}
           {{ form.icon(class="form-control form-control-sm", placeholder="e.g. fa-file-signature") }}
           <small class="text-muted">Optional FontAwesome icon class. Leave blank for a default icon.</small>
+        </div>
+        <div class="mb-3">
+          {{ form.sort_order.label(class="form-label small fw-semibold") }}
+          {{ form.sort_order(class="form-control form-control-sm", placeholder="e.g. 1") }}
+          <small class="text-muted">Lower numbers appear first (e.g. VC = 1, Pro VC = 2).</small>
         </div>
         <div class="d-grid">{{ form.submit(class="btn btn-primary btn-sm") }}</div>
       </form>
@@ -37,6 +42,7 @@
             <tr>
               <th class="ps-3">Office</th>
               <th>Description</th>
+              <th class="text-center">Order</th>
               <th>Officers</th>
               <th class="text-end pe-3">Actions</th>
             </tr>
@@ -48,6 +54,9 @@
               <i class="fas {{ office.icon or 'fa-building' }} me-2 text-muted"></i>{{ office.name }}
             </td>
             <td class="small text-muted">{{ office.description or '—' }}</td>
+            <td class="small text-center">
+              <span class="badge bg-secondary">{{ office.sort_order }}</span>
+            </td>
             <td class="small">
               <span class="badge bg-light text-dark border">{{ office.officers|length }}</span>
             </td>
@@ -58,7 +67,8 @@
                   data-id="{{ office.id }}"
                   data-name="{{ office.name | e }}"
                   data-description="{{ (office.description or '') | e }}"
-                  data-icon="{{ (office.icon or '') | e }}">
+                  data-icon="{{ (office.icon or '') | e }}"
+                  data-sort-order="{{ office.sort_order }}">
                   <i class="fas fa-edit"></i>
                 </button>
                 <a href="{{ url_for('admin.delete_office', office_id=office.id) }}" class="btn btn-sm btn-outline-danger"
@@ -69,7 +79,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="text-center text-muted py-4">No offices yet — add one on the left.</td></tr>
+          <tr><td colspan="5" class="text-center text-muted py-4">No offices yet — add one on the left.</td></tr>
           {% endfor %}
           </tbody>
         </table>
@@ -101,6 +111,11 @@
             <label class="form-label small fw-semibold">Icon (FontAwesome class)</label>
             <input type="text" name="edit_icon" id="editOfficeIcon" class="form-control form-control-sm" placeholder="e.g. fa-file-signature">
           </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Sort Order</label>
+            <input type="number" name="edit_office_sort_order" id="editOfficeSortOrder" class="form-control form-control-sm" min="0">
+            <small class="text-muted">Lower numbers appear first (e.g. VC = 1, Pro VC = 2, Registrar = 3).</small>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
@@ -123,6 +138,7 @@ document.querySelectorAll('.btn-edit-office').forEach(function(btn) {
     document.getElementById('editOfficeName').value        = d.name;
     document.getElementById('editOfficeDescription').value = d.description;
     document.getElementById('editOfficeIcon').value         = d.icon;
+    document.getElementById('editOfficeSortOrder').value    = d.sortOrder;
     document.getElementById('editOfficeForm').action = '/admin/offices/' + d.id + '/edit';
 
     var modalEl = document.getElementById('editOfficeModal');
