@@ -1106,7 +1106,7 @@ def book_calcom():
     from forms import AppointmentForm
     form = AppointmentForm()
     officers = (Officer.query.join(Office, Officer.office_id == Office.id, isouter=True)
-                .filter(Officer.is_active == True, Officer.handles_referred_exam.isnot(True))
+                .filter(Officer.is_active == True)
                 .order_by(Office.sort_order, Officer.name)
                 .all())
     return render_template('student/book_calcom.html', form=form, officers=officers)
