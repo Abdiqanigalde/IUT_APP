@@ -12,6 +12,7 @@
     </button>
     <div class="dropdown-menu dropdown-menu-end p-3" style="min-width:260px;">
       <form method="GET" action="{{ url_for('admin.export_csv') }}">
+        <input type="hidden" name="search" value="{{ search }}">
         <input type="hidden" name="officer" value="{{ officer_filter }}">
         <input type="hidden" name="status" value="{{ status_filter }}">
         <div class="mb-2">
@@ -23,7 +24,7 @@
           <input type="date" name="end_date" class="form-control form-control-sm">
         </div>
         <div class="form-text mb-2">
-          {% if officer_filter or status_filter %}Uses the officer/status filters currently applied above.{% else %}Leave both blank to export everything.{% endif %}
+          {% if search or officer_filter or status_filter %}Uses the search/officer/status filters currently applied above.{% else %}Leave both blank to export everything.{% endif %}
         </div>
         <button type="submit" class="btn btn-primary btn-sm w-100">
           <i class="fas fa-download me-1"></i>Download CSV
@@ -37,6 +38,11 @@
 <div class="card mb-4">
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Search</label>
+        <input type="text" name="search" class="form-control form-control-sm"
+               placeholder="Student name, ID, or email" value="{{ search }}">
+      </div>
       <div class="col-md-3">
         <label class="form-label">Officer</label>
         <select name="officer" class="form-select form-select-sm">
