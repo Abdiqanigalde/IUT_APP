@@ -5,6 +5,7 @@ from forms import AppointmentForm, ProfileForm, RescheduleForm
 from datetime import datetime, timedelta, timezone
 from flask_bcrypt import Bcrypt
 from services.appointment_service import AppointmentService
+from routes.visa import upload_to_cloudinary
 import io, csv
 
 student_bp = Blueprint('student', __name__)
@@ -907,6 +908,20 @@ def profile():
         current_user.email          = form.email.data
         current_user.student_id_num = form.student_id_num.data
         current_user.department     = form.department.data
+
+        photo_file = form.profile_picture.data
+        if photo_file and getattr(photo_file, 'filename', None):
+            uploaded_url = upload_to_cloudinary(
+                photo_file, 'profile_pictures',
+                f'student_{current_user.id}_{int(datetime.now(timezone.utc).timestamp())}'
+            )
+            if uploaded_url:
+                current_user.profile_picture_url = uploaded_url
+            else:
+                flash('Profile picture upload failed — check the file type (jpg/jpeg/png/webp). Other changes were still saved.', 'warning')
+        elif form.remove_profile_picture.data:
+            current_user.profile_picture_url = None
+
         if form.new_password.data:
             if not form.current_password.data or \
                not bcrypt.check_password_hash(current_user.password, form.current_password.data):
