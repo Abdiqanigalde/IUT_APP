@@ -103,14 +103,16 @@ body { background: var(--cal-bg) !important; }
 .slots-empty { text-align:center; color:var(--cal-muted); font-size:.82rem; padding:24px 0; }
 /* Officer step */
 .officer-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px; margin-top:8px; }
-.officer-card { border:2px solid var(--cal-border); border-radius:12px; padding:18px 16px; cursor:pointer; transition:all .15s; background:var(--cal-card); display:flex; align-items:center; gap:14px; }
+.officer-card { border:2px solid var(--cal-border); border-radius:12px; padding:18px 16px; cursor:pointer; transition:all .15s; background:var(--cal-card); display:flex; align-items:center; gap:14px; min-width:0; }
 .officer-card:hover { border-color:var(--cal-blue); box-shadow:0 0 0 3px rgba(59,130,246,.1); }
 .officer-card.selected { border-color:var(--cal-blue); background:#eff6ff; }
 [data-bs-theme="dark"] .officer-card.selected { background:#1e3a5f; }
 .officer-avatar-sm { width:46px; height:46px; border-radius:50%; object-fit:cover; flex-shrink:0; }
 .officer-avatar-placeholder { width:46px; height:46px; border-radius:50%; flex-shrink:0; background:linear-gradient(135deg,#4361ee,#3b82f6); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:18px; }
 .officer-info h6 { margin:0; font-size:.88rem; font-weight:700; color:var(--cal-text); }
+.officer-info { flex:1 1 auto; min-width:0; }
 .officer-info small { color:var(--cal-muted); font-size:.75rem; }
+.officer-info .badge { white-space:normal; text-align:left; line-height:1.3; }
 /* Step indicator */
 .cal-steps { display:flex; gap:8px; align-items:center; margin-bottom:24px; }
 .cal-step { display:flex; align-items:center; gap:6px; font-size:.8rem; font-weight:500; color:var(--cal-muted); }
