@@ -1,4 +1,5 @@
 import os
+import logging
 
 from flask import Flask, redirect, url_for, render_template, session, request as flask_request
 from flask_login import LoginManager, current_user, logout_user
@@ -10,6 +11,16 @@ from flask_limiter.util import get_remote_address
 from flask_socketio import SocketIO, emit, join_room
 from models import db, User
 from datetime import datetime, timedelta, timezone
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+# Set LOG_LEVEL=DEBUG on Render (or locally) to see verbose output; defaults to
+# INFO. This replaces scattered print() calls with real levels/timestamps so
+# warnings and errors can be told apart from routine status lines in the logs.
+logging.basicConfig(
+    level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
+    format='%(asctime)s %(levelname)s [%(name)s] %(message)s',
+)
+logger = logging.getLogger('iut')
 
 app = Flask(__name__)
 
