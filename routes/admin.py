@@ -141,11 +141,17 @@ def dashboard():
 @login_required
 @admin_required
 def manage_appointments():
+    search         = request.args.get('search', '').strip()
     officer_filter = request.args.get('officer', '')
     status_filter  = request.args.get('status', '')
     date_filter    = request.args.get('date', '')
 
     query = Appointment.query.join(Officer)
+    if search:
+        query = query.join(User, Appointment.user_id == User.id).filter(
+            db.or_(Appointment.student_name.ilike(f'%{search}%'),
+                   Appointment.student_id_num.ilike(f'%{search}%'),
+                   User.email.ilike(f'%{search}%')))
     if officer_filter:
         try:
             query = query.filter(Officer.id == int(officer_filter))
@@ -183,12 +189,12 @@ def manage_appointments():
             db.session.commit()
             flash(f'{len(ids)} appointment(s) {action.lower()}.', 'success')
         return redirect(url_for('admin.manage_appointments',
-                                officer=officer_filter, status=status_filter, date=date_filter))
+                                search=search, officer=officer_filter, status=status_filter, date=date_filter))
 
-    base_args = {'officer': officer_filter, 'status': status_filter, 'date': date_filter}
+    base_args = {'search': search, 'officer': officer_filter, 'status': status_filter, 'date': date_filter}
     return render_template('admin/appointments.html', appointments=appointments,
                            all_officers=all_officers, pagination=appointments_page, base_args=base_args,
-                           officer_filter=officer_filter, status_filter=status_filter, date_filter=date_filter)
+                           search=search, officer_filter=officer_filter, status_filter=status_filter, date_filter=date_filter)
 
 
 @admin_bp.route('/admin/update_status/<int:appointment_id>/<string:status>', methods=['GET', 'POST'])
@@ -751,10 +757,16 @@ def export_csv():
 
     officer_filter = request.args.get('officer', '')
     status_filter  = request.args.get('status', '')
+    search         = request.args.get('search', '').strip()
     start_date_str = request.args.get('start_date', '')
     end_date_str   = request.args.get('end_date', '')
 
     query = Appointment.query.join(Officer)
+    if search:
+        query = query.join(User, Appointment.user_id == User.id).filter(
+            db.or_(Appointment.student_name.ilike(f'%{search}%'),
+                   Appointment.student_id_num.ilike(f'%{search}%'),
+                   User.email.ilike(f'%{search}%')))
     if officer_filter:
         try:
             query = query.filter(Officer.id == int(officer_filter))
