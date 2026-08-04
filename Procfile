@@ -1,1 +1,1 @@
-gunicorn --worker-class gthread --threads 4 -w 1 --timeout 60 app:app
+flask db upgrade && gunicorn --worker-class gthread --threads 4 -w 1 --timeout 60 app:app
