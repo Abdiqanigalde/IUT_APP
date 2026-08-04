@@ -13,6 +13,9 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from models import db, ReferredExamRegistration, Officer, Notification, User
 from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger('iut.referred_exam')
 
 referred_exam_bp = Blueprint('referred_exam', __name__)
 
@@ -72,10 +75,10 @@ def send_referred_exam_email(student, status, note='', officer=None):
             return
 
         send_email(subject, [student.email], body)
-        print(f'[IUT] Referred exam email sent to {student.email} — {status}')
+        logger.info('Referred exam email sent to %s — %s', student.email, status)
 
     except Exception as e:
-        print(f'[IUT] Referred exam email error: {e}')
+        logger.warning('Referred exam email error: %s', e, exc_info=True)
 
 
 # ── Student side ─────────────────────────────────────────────────────────────
@@ -295,7 +298,7 @@ def download_pdf(reg_id):
                 pdfmetrics.registerFont(TTFont('Amiri', amiri_path))
             arabic_font = 'Amiri'
     except Exception as _font_err:
-        print(f'[IUT] Arabic font registration error (non-fatal): {_font_err}')
+        logger.debug('Arabic font registration error (non-fatal): %s', _font_err)
 
     def _arabic(text):
         try:
