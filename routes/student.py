@@ -163,7 +163,7 @@ def book_appointment():
 
     form     = AppointmentForm()
     officers = (Officer.query.join(Office, Officer.office_id == Office.id, isouter=True)
-                .filter(Officer.is_active == True)
+                .filter(Officer.is_active == True, Officer.handles_referred_exam.isnot(True))
                 .order_by(Office.sort_order, Officer.name)
                 .all())
     form.officer.choices = [(o.id, f"{o.name} ({o.designation})") for o in officers]
@@ -1106,7 +1106,7 @@ def book_calcom():
     from forms import AppointmentForm
     form = AppointmentForm()
     officers = (Officer.query.join(Office, Officer.office_id == Office.id, isouter=True)
-                .filter(Officer.is_active == True)
+                .filter(Officer.is_active == True, Officer.handles_referred_exam.isnot(True))
                 .order_by(Office.sort_order, Officer.name)
                 .all())
     return render_template('student/book_calcom.html', form=form, officers=officers)
@@ -1143,6 +1143,11 @@ def book_calcom_submit():
     officer = db.session.get(Officer, officer_id)
     if not officer:
         flash('Officer not found.', 'danger')
+        return redirect(url_for('student.book_calcom'))
+
+    if officer.handles_referred_exam:
+        flash(f'{officer.name} only handles Referred Exam Registration, not regular '
+              f'appointments — please use the Referred Exam Registration page instead.', 'danger')
         return redirect(url_for('student.book_calcom'))
 
     day_name = booking_date.strftime('%A')
