@@ -4,8 +4,35 @@
     <div class="col-md-6">
         <div class="card p-4">
             <h3 class="fw-bold mb-4"><i class="fas fa-user-edit me-2 text-primary"></i>My Profile</h3>
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 {{ form.hidden_tag() }}
+
+                <div class="mb-4 text-center">
+                    {% if current_user.profile_picture_url %}
+                        <img src="{{ current_user.profile_picture_url }}" alt="Profile picture"
+                             class="rounded-circle mb-2"
+                             style="width:110px;height:110px;object-fit:cover;border:2px solid var(--border);">
+                    {% else %}
+                        <div class="rounded-circle mb-2 mx-auto d-flex align-items-center justify-content-center"
+                             style="width:110px;height:110px;background:linear-gradient(135deg, var(--brand), var(--accent));color:#fff;font-size:2.2rem;font-weight:700;">
+                            {{ current_user.name[0].upper() if current_user.name else 'U' }}
+                        </div>
+                    {% endif %}
+
+                    <div class="mt-2">
+                        {{ form.profile_picture(class="form-control") }}
+                        {% for error in form.profile_picture.errors %}
+                            <div class="text-danger small mt-1">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    {% if current_user.profile_picture_url %}
+                        <div class="form-check mt-2 text-start">
+                            {{ form.remove_profile_picture(class="form-check-input") }}
+                            {{ form.remove_profile_picture.label(class="form-check-label small") }}
+                        </div>
+                    {% endif %}
+                </div>
 
                 <div class="mb-3">
                     {{ form.name.label(class="form-label fw-semibold") }}
