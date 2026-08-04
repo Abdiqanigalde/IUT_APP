@@ -658,6 +658,12 @@ app.register_blueprint(referred_exam_bp)
 
 limiter.limit("10 per minute")(auth_bp)
 
+# The cron-triggered reminders endpoint is called machine-to-machine (GitHub
+# Actions) with no browser session, so it can't carry a CSRF token — it's
+# authenticated via a shared secret header instead (see routes/admin.py).
+from routes.admin import cron_send_reminders as _cron_send_reminders_view
+csrf.exempt(_cron_send_reminders_view)
+
 
 # ── Root route ────────────────────────────────────────────────────────────────
 @app.route('/')
