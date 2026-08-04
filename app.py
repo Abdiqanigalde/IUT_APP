@@ -119,22 +119,6 @@ with app.app_context():
     except Exception as _mcp_err:
         print(f'[IUT] must_change_password column migration error (non-fatal): {_mcp_err}')
 
-    # ── User.profile_picture_url: column self-heal ────────────────────────────
-    try:
-        from sqlalchemy import text as _ppu_text, inspect as _ppu_inspect
-        _user_cols2 = {c['name'] for c in _ppu_inspect(db.engine).get_columns('user')}
-        if 'profile_picture_url' not in _user_cols2:
-            with db.engine.connect() as _ppu_conn:
-                _ppu_conn.execute(_ppu_text(
-                    'ALTER TABLE "user" ADD COLUMN profile_picture_url VARCHAR(500)'
-                ))
-                _ppu_conn.commit()
-            print('[IUT] user.profile_picture_url column added ✅')
-        else:
-            print('[IUT] user.profile_picture_url already exists — skipping.')
-    except Exception as _ppu_err:
-        print(f'[IUT] profile_picture_url column migration error (non-fatal): {_ppu_err}')
-
     # ── Auto-create super_admin if none exists ────────────────────────────────
     if not User.query.filter_by(role='super_admin').first():
         from flask_bcrypt import Bcrypt as _B
@@ -470,6 +454,25 @@ with app.app_context():
 
     except Exception as _office_err:
         print(f'[IUT] office migration error (non-fatal): {_office_err}')
+
+    # ── Waitlist: composite index self-heal ─────────────────────────────────────
+    # Speeds up the batched queue-position / waiter-count queries used on the
+    # student dashboard, /student/waitlist, and the booking calendar's slot API.
+    try:
+        from sqlalchemy import text as _wl_text, inspect as _wl_inspect
+        existing_indexes = {ix['name'] for ix in _wl_inspect(db.engine).get_indexes('waitlist_entry')}
+        if 'ix_waitlist_officer_slot' not in existing_indexes:
+            with db.engine.connect() as conn:
+                conn.execute(_wl_text(
+                    'CREATE INDEX IF NOT EXISTS ix_waitlist_officer_slot '
+                    'ON waitlist_entry (officer_id, slot_date, slot_time)'
+                ))
+                conn.commit()
+            print('[IUT] waitlist_entry composite index added ✅')
+        else:
+            print('[IUT] waitlist_entry composite index already exists — skipping.')
+    except Exception as _wl_err:
+        print(f'[IUT] waitlist index migration error (non-fatal): {_wl_err}')
 
     # ── Referred Exam Registration: table + officer flag self-heal ─────────────
     try:
