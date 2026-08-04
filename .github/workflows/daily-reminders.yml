@@ -1,0 +1,21 @@
+name: Send Daily Appointment Reminders
+
+on:
+  schedule:
+    # Runs every day at 02:00 UTC (~08:00 Dhaka time), so students get
+    # reminded first thing in the morning for tomorrow's appointment.
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}   # lets you trigger this manually from the Actions tab
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call reminders endpoint
+        env:
+          APP_URL: ${{ secrets.RENDER_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -f -X POST "$APP_URL/admin/cron/send-reminders" \
+            -H "X-Cron-Secret: $CRON_SECRET" \
+            --max-time 60
