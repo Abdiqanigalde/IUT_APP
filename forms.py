@@ -94,6 +94,9 @@ class ProfileForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])
     student_id_num = StringField('Student ID', validators=[Optional()])
     department = StringField('Department', validators=[Optional()])
+    profile_picture = FileField('Profile Picture',
+        validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'webp'], 'Images only (jpg, jpeg, png, webp)!')])
+    remove_profile_picture = BooleanField('Remove current profile picture', validators=[Optional()])
     current_password = PasswordField('Current Password', validators=[Optional()])
     new_password = PasswordField('New Password (min 8 chars, upper/lower/number)',
                                   validators=[Optional(), password_strength])
