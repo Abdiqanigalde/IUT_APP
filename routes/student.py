@@ -5,7 +5,6 @@ from forms import AppointmentForm, ProfileForm, RescheduleForm
 from datetime import datetime, timedelta, timezone
 from flask_bcrypt import Bcrypt
 from services.appointment_service import AppointmentService
-from routes.visa import upload_to_cloudinary
 import io, csv
 
 student_bp = Blueprint('student', __name__)
@@ -163,7 +162,10 @@ def book_appointment():
         return redirect(url_for('index'))
 
     form     = AppointmentForm()
-    officers = Officer.query.filter_by(is_active=True).all()
+    officers = (Officer.query.join(Office, Officer.office_id == Office.id, isouter=True)
+                .filter(Officer.is_active == True)
+                .order_by(Office.sort_order, Officer.name)
+                .all())
     form.officer.choices = [(o.id, f"{o.name} ({o.designation})") for o in officers]
 
     from app import generate_time_slots
@@ -908,20 +910,6 @@ def profile():
         current_user.email          = form.email.data
         current_user.student_id_num = form.student_id_num.data
         current_user.department     = form.department.data
-
-        photo_file = form.profile_picture.data
-        if photo_file and getattr(photo_file, 'filename', None):
-            uploaded_url = upload_to_cloudinary(
-                photo_file, 'profile_pictures',
-                f'student_{current_user.id}_{int(datetime.now(timezone.utc).timestamp())}'
-            )
-            if uploaded_url:
-                current_user.profile_picture_url = uploaded_url
-            else:
-                flash('Profile picture upload failed — check the file type (jpg/jpeg/png/webp). Other changes were still saved.', 'warning')
-        elif form.remove_profile_picture.data:
-            current_user.profile_picture_url = None
-
         if form.new_password.data:
             if not form.current_password.data or \
                not bcrypt.check_password_hash(current_user.password, form.current_password.data):
@@ -984,7 +972,9 @@ def officer_list():
         # "office=none" means the "Unassigned / General" bucket from the offices page
         query = query.filter_by(office_id=None)
 
-    officers = query.all()
+    officers = query.order_by(Officer.name).all() if office_id or 'office' in request.args else \
+        query.join(Office, Officer.office_id == Office.id, isouter=True) \
+             .order_by(Office.sort_order, Officer.name).all()
     today    = datetime.now(timezone.utc).date()
     return render_template('student/officers.html', officers=officers, today=today, office=office)
 
@@ -1115,7 +1105,10 @@ def book_calcom():
         return redirect(url_for('index'))
     from forms import AppointmentForm
     form = AppointmentForm()
-    officers = Officer.query.filter_by(is_active=True).all()
+    officers = (Officer.query.join(Office, Officer.office_id == Office.id, isouter=True)
+                .filter(Officer.is_active == True)
+                .order_by(Office.sort_order, Officer.name)
+                .all())
     return render_template('student/book_calcom.html', form=form, officers=officers)
 
 
