@@ -36,7 +36,9 @@ class AISuggestionsService:
 
     @staticmethod
     def recommend_officers(issue, num_recommendations=3):
-        active_officers = Officer.query.filter_by(is_active=True).all()
+        active_officers = Officer.query.filter_by(is_active=True).filter(
+            Officer.handles_referred_exam.isnot(True)
+        ).all()
         if not active_officers:
             return []
 
