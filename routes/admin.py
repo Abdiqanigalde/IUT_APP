@@ -4,7 +4,7 @@ from models import db, Appointment, User, Officer, Office, Notification, Officer
 from forms import OfficerForm, UnavailabilityForm, BulkUnavailabilityForm, WorkingHoursForm, RejectNoteForm, OfficerProfileForm, OfficeForm
 from routes.visa import upload_to_cloudinary
 from datetime import datetime, timedelta, timezone
-import csv, io
+import csv, io, os, secrets
 from flask_bcrypt import Bcrypt as _Bcrypt
 _bcrypt_admin = _Bcrypt()
 
@@ -674,10 +674,10 @@ def delete_unavailability(period_id):
     return redirect(url_for('admin.manage_unavailability', officer_id=oid))
 
 # ── Send reminders ────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/send-reminders')
-@login_required
-@admin_required
-def send_reminders():
+
+def _send_tomorrows_reminders():
+    """Core reminder logic, shared by the manual admin button and the
+    cron-triggered endpoint below, so both stay in sync automatically."""
     from utils import send_email, reminder_email
     tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
     apts     = Appointment.query.filter_by(date=tomorrow, status='Approved', reminder_sent=False).all()
@@ -690,8 +690,35 @@ def send_reminders():
         apt.reminder_sent = True
         sent += 1
     db.session.commit()
+    return sent
+
+
+@admin_bp.route('/admin/send-reminders')
+@login_required
+@admin_required
+def send_reminders():
+    sent = _send_tomorrows_reminders()
     flash(f'Reminders sent to {sent} student(s).', 'success')
     return redirect(url_for('admin.dashboard'))
+
+
+@admin_bp.route('/admin/cron/send-reminders', methods=['POST'])
+def cron_send_reminders():
+    """Triggered automatically once a day by a GitHub Actions scheduled workflow
+    (see .github/workflows/daily-reminders.yml), since Render's free tier has no
+    built-in cron and an in-process scheduler would be unreliable on a service
+    that spins down when idle. Protected by a shared secret instead of a login,
+    since this is called machine-to-machine with no user session."""
+    expected = os.environ.get('CRON_SECRET')
+    provided = request.headers.get('X-Cron-Secret', '')
+    if not expected:
+        return jsonify({'error': 'CRON_SECRET not configured on server'}), 503
+    if not provided or not secrets.compare_digest(provided, expected):
+        return jsonify({'error': 'unauthorized'}), 401
+    sent = _send_tomorrows_reminders()
+    return jsonify({'reminders_sent': sent}), 200
+
+
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
 @admin_bp.route('/admin/audit')
