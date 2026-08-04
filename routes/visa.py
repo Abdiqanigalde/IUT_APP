@@ -1,10 +1,13 @@
 import os
+import logging
 import cloudinary
 import cloudinary.uploader
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from models import db, VisaApplication, User
 from datetime import datetime, timezone
+
+logger = logging.getLogger('iut.visa')
 
 visa_bp = Blueprint('visa', __name__)
 
@@ -33,7 +36,7 @@ def upload_to_cloudinary(file, folder, public_id):
         )
         return result.get('secure_url')
     except Exception as e:
-        print(f'[IUT] Cloudinary upload error: {e}')
+        logger.error('Cloudinary upload error: %s', e, exc_info=True)
         return None
 
 
@@ -94,10 +97,10 @@ def send_visa_email(student, status, note=''):
             return
 
         send_email(subject, [student.email], body)
-        print(f'[IUT] Visa email sent to {student.email} — {status}')
+        logger.info('Visa email sent to %s — %s', student.email, status)
 
     except Exception as e:
-        print(f'[IUT] Visa email error: {e}')
+        logger.warning('Visa email error: %s', e, exc_info=True)
 
 
 @visa_bp.route('/student/visa-guide')
