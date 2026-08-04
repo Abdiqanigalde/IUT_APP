@@ -943,7 +943,7 @@ def toggle_darkmode():
 def office_list():
     """Office-first browsing entry point: shows each office as a card. Click one
     to see only the officers under it (like the real registrar site)."""
-    offices = Office.query.order_by(Office.name).all()
+    offices = Office.query.order_by(Office.sort_order, Office.name).all()
     office_counts = {
         o.id: Officer.query.filter_by(office_id=o.id, is_active=True).count() for o in offices
     }
