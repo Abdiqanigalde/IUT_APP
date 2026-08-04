@@ -8,6 +8,9 @@ from datetime import datetime, date, timedelta, timezone
 import qrcode
 from io import BytesIO
 import base64
+import logging
+
+logger = logging.getLogger('iut.appointment_service')
 
 class AppointmentService:
     """Service for managing appointments"""
@@ -262,7 +265,7 @@ class AppointmentService:
             
             return True
         except Exception as e:
-            print(f"Error updating appointment status: {str(e)}")
+            logger.error('Error updating appointment status: %s', e, exc_info=True)
             return False
 
     @staticmethod
