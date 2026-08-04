@@ -266,6 +266,7 @@ body { background: var(--cal-bg) !important; }
              data-id="{{ o.id }}" data-name="{{ o.name }}"
              data-desig="{{ o.designation }}" data-room="{{ o.room or 'N/A' }}"
              data-photo="{{ o.photo_display_url() or '' }}"
+             data-referred="{{ '1' if o.handles_referred_exam else '0' }}"
              onclick="selectOfficer(this)">
           {% if o.photo_display_url() %}
           <img src="{{ o.photo_display_url() }}" class="officer-avatar-sm" alt="{{ o.name }}"
@@ -278,6 +279,11 @@ body { background: var(--cal-bg) !important; }
             <h6>{{ o.name }}</h6>
             <small>{{ o.designation }}</small><br>
             {% if o.room %}<small><i class="fas fa-map-marker-alt me-1" style="font-size:.7rem;"></i>{{ o.room }}</small>{% endif %}
+            {% if o.handles_referred_exam %}
+            <br><span class="badge mt-1" style="background:#7c3aed;color:#fff;font-size:.68rem;">
+              <i class="fas fa-file-signature me-1"></i>Referred Exam Registration
+            </span>
+            {% endif %}
           </div>
         </div>
         {% endfor %}
@@ -415,6 +421,7 @@ const STATE = {
   aiSuggestedOfficerId:null, aiSuggestedSlots:[],
 };
 const TODAY_STR = new Date().toISOString().slice(0,10);
+const REFERRED_EXAM_URL = "{{ url_for('referred_exam.guide') }}";
 
 // ══ AI Panel ═════════════════════════════════════════════════════════════════
 let aiPanelOpen = true;
@@ -528,6 +535,10 @@ function applyAiSuggestion(officerId, timeSlot) {
 
 // ══ Officer ══════════════════════════════════════════════════════════════════
 function selectOfficer(card) {
+  if (card.dataset.referred === '1') {
+    window.location.href = REFERRED_EXAM_URL;
+    return;
+  }
   document.querySelectorAll('.officer-card').forEach(c=>{c.classList.remove('selected');c.style.boxShadow='';c.style.borderColor='';});
   card.classList.add('selected');
   STATE.officerId=card.dataset.id; STATE.officerName=card.dataset.name; STATE.officerRoom=card.dataset.room;
