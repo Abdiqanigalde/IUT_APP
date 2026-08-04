@@ -147,7 +147,10 @@ def manage_appointments():
 
     query = Appointment.query.join(Officer)
     if officer_filter:
-        query = query.filter(Officer.name == officer_filter)
+        try:
+            query = query.filter(Officer.id == int(officer_filter))
+        except ValueError:
+            pass
     if status_filter:
         query = query.filter(Appointment.status == status_filter)
     if date_filter:
@@ -745,9 +748,39 @@ def audit_log():
 @admin_required
 def export_csv():
     from utils import csv_safe
-    appointments = Appointment.query.all()
-    output       = io.StringIO()
-    writer       = csv.writer(output)
+
+    officer_filter = request.args.get('officer', '')
+    status_filter  = request.args.get('status', '')
+    start_date_str = request.args.get('start_date', '')
+    end_date_str   = request.args.get('end_date', '')
+
+    query = Appointment.query.join(Officer)
+    if officer_filter:
+        try:
+            query = query.filter(Officer.id == int(officer_filter))
+        except ValueError:
+            pass
+    if status_filter:
+        query = query.filter(Appointment.status == status_filter)
+
+    start_date = end_date = None
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            query = query.filter(Appointment.date >= start_date)
+        except ValueError:
+            pass
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            query = query.filter(Appointment.date <= end_date)
+        except ValueError:
+            pass
+
+    appointments = query.order_by(Appointment.date.desc(), Appointment.time.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
     writer.writerow(['ID', 'Student Name', 'Student ID', 'Department', 'Officer',
                      'Date', 'Time', 'Status', 'Rejection Note'])
     for apt in appointments:
@@ -763,8 +796,22 @@ def export_csv():
             csv_safe(apt.rejection_note or ''),
         ])
     output.seek(0)
+
+    # Filename reflects what's actually in the file, so old exports don't get
+    # confused for the full dataset.
+    if start_date or end_date:
+        range_label = f"{start_date or 'start'}_to_{end_date or 'now'}"
+    else:
+        range_label = 'all'
+    filename = f"appointments_export_{range_label}.csv"
+
+    log_action('csv_export', f"Exported {len(appointments)} appointment(s) "
+               f"(officer={officer_filter or 'all'}, status={status_filter or 'all'}, "
+               f"range={start_date_str or '…'}–{end_date_str or '…'})")
+    db.session.commit()
+
     return Response(output, mimetype="text/csv",
-                    headers={"Content-disposition": "attachment; filename=appointments_export.csv"})
+                    headers={"Content-disposition": f"attachment; filename={filename}"})
 
 # ── Profile ───────────────────────────────────────────────────────────────────
 from forms import ProfileForm
