@@ -156,7 +156,11 @@ def manage_appointments():
         except ValueError:
             pass
 
-    appointments = query.order_by(Appointment.date.desc(), Appointment.time.desc()).all()
+    appointments_page = db.paginate(
+        query.order_by(Appointment.date.desc(), Appointment.time.desc()),
+        page=request.args.get('page', 1, type=int), per_page=25, error_out=False
+    )
+    appointments = appointments_page.items
     all_officers = Officer.query.all()
 
     if request.method == 'POST':
@@ -178,8 +182,9 @@ def manage_appointments():
         return redirect(url_for('admin.manage_appointments',
                                 officer=officer_filter, status=status_filter, date=date_filter))
 
+    base_args = {'officer': officer_filter, 'status': status_filter, 'date': date_filter}
     return render_template('admin/appointments.html', appointments=appointments,
-                           all_officers=all_officers,
+                           all_officers=all_officers, pagination=appointments_page, base_args=base_args,
                            officer_filter=officer_filter, status_filter=status_filter, date_filter=date_filter)
 
 
@@ -274,11 +279,17 @@ def manage_students():
     elif status == 'inactive':
         query = query.filter_by(is_active=False)
 
-    students    = query.order_by(User.created_at.desc()).all()
+    students_page = db.paginate(
+        query.order_by(User.created_at.desc()),
+        page=request.args.get('page', 1, type=int), per_page=25, error_out=False
+    )
+    students    = students_page.items
     departments = db.session.query(User.department).filter(User.role == 'student', User.department != None).distinct().all()
     departments = [d[0] for d in departments if d[0]]
 
+    base_args = {'search': search, 'department': dept, 'status': status}
     return render_template('admin/students.html', students=students,
+                           pagination=students_page, base_args=base_args,
                            search=search, dept=dept, status_filter=status,
                            departments=departments)
 
@@ -875,7 +886,17 @@ def view_feedback():
     query = Feedback.query.order_by(Feedback.created_at.desc())
     if officer_filter:
         query = query.filter_by(officer_id=officer_filter)
-    entries = query.all()
+
+    # Compute average/count over the FULL filtered set via SQL aggregate,
+    # not just the current page, so these numbers don't shift as you page through.
+    agg_query = db.session.query(func.avg(Feedback.rating), func.count(Feedback.id))
+    if officer_filter:
+        agg_query = agg_query.filter(Feedback.officer_id == officer_filter)
+    overall_avg, total_count = agg_query.one()
+
+    entries_page = db.paginate(query, page=request.args.get('page', 1, type=int),
+                               per_page=25, error_out=False)
+    entries = entries_page.items
 
     # Per-officer average rating + count, for the summary cards at the top.
     summary_rows = (
@@ -891,11 +912,12 @@ def view_feedback():
     )
 
     all_officers = Officer.query.order_by(Officer.name).all()
-    overall_avg = (sum(e.rating for e in entries) / len(entries)) if entries else None
 
+    base_args = {'officer_id': officer_filter} if officer_filter else {}
     return render_template('admin/feedback.html', entries=entries, summary_rows=summary_rows,
                            all_officers=all_officers, officer_filter=officer_filter,
-                           overall_avg=overall_avg)
+                           overall_avg=overall_avg, total_count=total_count,
+                           pagination=entries_page, base_args=base_args)
 
 
 def _holiday_cancellation_email(apt, student, title, start_date, end_date, reason):
