@@ -120,19 +120,27 @@ def dashboard():
         .order_by(WaitlistEntry.joined_at)
         .all()
     )
-    # Annotate each entry with queue position and slot info
-    for entry in waitlist_entries:
-        position = (
+    # Annotate each entry with queue position, using ONE query for all entries
+    # instead of a separate COUNT() per entry (was N+1).
+    if waitlist_entries:
+        from collections import defaultdict
+        officer_ids = {e.officer_id for e in waitlist_entries}
+        slot_dates  = {e.slot_date for e in waitlist_entries}
+        slot_times  = {e.slot_time for e in waitlist_entries}
+        related = (
             WaitlistEntry.query
-            .filter_by(
-                officer_id=entry.officer_id,
-                slot_date=entry.slot_date,
-                slot_time=entry.slot_time,
-            )
-            .filter(WaitlistEntry.joined_at <= entry.joined_at)
-            .count()
+            .filter(WaitlistEntry.officer_id.in_(officer_ids))
+            .filter(WaitlistEntry.slot_date.in_(slot_dates))
+            .filter(WaitlistEntry.slot_time.in_(slot_times))
+            .order_by(WaitlistEntry.joined_at)
+            .all()
         )
-        entry.queue_position = position
+        grouped = defaultdict(list)
+        for r in related:
+            grouped[(r.officer_id, r.slot_date, r.slot_time)].append(r)
+        for entry in waitlist_entries:
+            key = (entry.officer_id, entry.slot_date, entry.slot_time)
+            entry.queue_position = sum(1 for r in grouped[key] if r.joined_at <= entry.joined_at)
 
     return render_template(
         'student/dashboard.html',
@@ -153,140 +161,19 @@ def read_all_notifications():
     return redirect(url_for('student.dashboard'))
 
 
-# ── Book appointment ──────────────────────────────────────────────────────────
+# ── Book appointment (legacy alias) ────────────────────────────────────────
+# The old multi-field /student/book form has been superseded by the
+# Cal.com-style /student/book-calcom flow (linked from the nav as "Book Now").
+# This route is kept only so old bookmarks/links don't 404 — it just forwards
+# straight to the working booking page instead of maintaining two parallel
+# (and easily-diverging) booking implementations.
 
 @student_bp.route('/student/book', methods=['GET', 'POST'])
 @login_required
 def book_appointment():
     if current_user.role != 'student':
         return redirect(url_for('index'))
-
-    form     = AppointmentForm()
-    officers = (Officer.query.join(Office, Officer.office_id == Office.id, isouter=True)
-                .filter(Officer.is_active == True, Officer.handles_referred_exam.isnot(True))
-                .order_by(Office.sort_order, Officer.name)
-                .all())
-    form.officer.choices = [(o.id, f"{o.name} ({o.designation})") for o in officers]
-
-    from app import generate_time_slots
-    form.time.choices = [(s, s) for s in generate_time_slots('06:00', '22:00')]
-
-    if request.method == 'GET':
-        if current_user.student_id_num:
-            form.student_id_num.data = current_user.student_id_num
-        if current_user.department:
-            form.department.data = current_user.department
-
-    if form.validate_on_submit():
-        booking_date = form.date.data
-        day_name     = booking_date.strftime('%A')
-        officer      = db.session.get(Officer, form.officer.data)
-
-        # ── Day-off check ─────────────────────────────────────────────────────
-        if is_day_off(officer, booking_date):
-            flash(f'{officer.name} does not take appointments on {day_name}s.', 'danger')
-            return render_template('student/book.html', form=form)
-
-        # ── Global holiday check ──────────────────────────────────────────────
-        holiday = get_global_holiday(booking_date)
-        if holiday:
-            flash(f'No appointments available — University Holiday: {holiday.title}.', 'danger')
-            return render_template('student/book.html', form=form)
-
-        # ── Unavailability check ──────────────────────────────────────────────
-        unavail = get_unavailability(officer.id, booking_date)
-        if unavail:
-            flash(
-                f'<i class="fas fa-ban me-1"></i> <strong>{officer.name}</strong> is unavailable '
-                f'({unavail.start_date.strftime("%d %b")} – {unavail.end_date.strftime("%d %b %Y")}). '
-                f'Reason: {unavail.reason}',
-                'danger'
-            )
-            return render_template('student/book.html', form=form)
-
-        # ── Daily limit check ─────────────────────────────────────────────────
-        if officer.daily_limit > 0 and daily_count(officer.id, booking_date) >= officer.daily_limit:
-            flash(f'{officer.name} has reached the maximum appointments for that day.', 'danger')
-            return render_template('student/book.html', form=form)
-
-        # ── Student schedule conflict check ───────────────────────────────────
-        student_conflict = Appointment.query.filter_by(
-            user_id=current_user.id,
-            date=booking_date,
-            time=form.time.data,
-        ).filter(Appointment.status.in_(['Pending', 'Approved'])).first()
-        if student_conflict:
-            flash('You already have an appointment at this time.', 'danger')
-            return render_template('student/book.html', form=form)
-
-        # ── Slot collision check → offer waitlist ─────────────────────────────
-        taken = slot_appointment(officer.id, booking_date, form.time.data)
-        if taken:
-            # Count how many are already waiting for this slot
-            waiters = WaitlistEntry.query.filter_by(
-                officer_id=officer.id,
-                slot_date=booking_date,
-                slot_time=form.time.data,
-            ).count()
-            flash(
-                f'This time slot is already booked ({waiters} person(s) waiting). '
-                f'You may join the waitlist.',
-                'warning'
-            )
-            return render_template(
-                'student/book.html',
-                form=form,
-                suggest_waitlist=True,
-                waitlist_officer_id=officer.id,
-                waitlist_date=booking_date.isoformat(),
-                waitlist_time=form.time.data,
-                waitlist_student_id_num=form.student_id_num.data,
-                waitlist_department=form.department.data,
-                waitlist_issue=form.issue.data,
-                waitlist_student_name=form.student_name.data,
-            )
-
-        # ── Create appointment ────────────────────────────────────────────────
-        apt = Appointment(
-            user_id=current_user.id,
-            student_name=form.student_name.data,
-            student_id_num=form.student_id_num.data,
-            department=form.department.data,
-            officer_id=officer.id,
-            day=day_name,
-            date=booking_date,
-            time=form.time.data,
-            issue=form.issue.data,
-            status='Pending',
-        )
-        db.session.add(apt)
-
-        current_user.student_id_num = form.student_id_num.data
-        current_user.department     = form.department.data
-
-        db.session.flush()          # get apt.id before commit
-        apt.qr_code_data = build_qr_data(apt)
-
-        from models import AppointmentTimeline
-        db.session.add(AppointmentTimeline(
-            appointment_id=apt.id,
-            status='Booked',
-            note='Appointment created, awaiting admin approval.'
-        ))
-
-        db.session.commit()
-
-        from utils import send_email, booking_confirmation_email
-        send_email(
-            "Appointment Booked — IUT Appointments",
-            [current_user.email],
-            booking_confirmation_email(apt, current_user)
-        )
-
-        flash('Appointment booked successfully! Waiting for approval.', 'success')
-        return redirect(url_for('student.dashboard'))
-
-    return render_template('student/book.html', form=form)
+    return redirect(url_for('student.book_calcom'))
 
 
 # ── Cancel ────────────────────────────────────────────────────────────────────
@@ -486,24 +373,24 @@ def join_waitlist():
     # Validate inputs
     if not officer_id or not slot_date_str or not slot_time:
         flash('Missing slot information. Please try booking again.', 'danger')
-        return redirect(url_for('student.book_appointment'))
+        return redirect(url_for('student.book_calcom'))
 
     try:
         slot_date = datetime.strptime(slot_date_str, '%Y-%m-%d').date()
     except ValueError:
         flash('Invalid date format.', 'danger')
-        return redirect(url_for('student.book_appointment'))
+        return redirect(url_for('student.book_calcom'))
 
     officer = db.session.get(Officer, officer_id)
     if not officer:
         flash('Officer not found.', 'danger')
-        return redirect(url_for('student.book_appointment'))
+        return redirect(url_for('student.book_calcom'))
 
     # Slot must still be taken (no point joining if it's now open)
     taken = slot_appointment(officer_id, slot_date, slot_time)
     if not taken:
         flash('That slot is now available — go ahead and book it directly!', 'info')
-        return redirect(url_for('student.book_appointment'))
+        return redirect(url_for('student.book_calcom'))
 
     # Enforce per-student waitlist cap
     active_count = WaitlistEntry.query.filter_by(user_id=current_user.id).count()
@@ -579,24 +466,32 @@ def my_waitlist():
         .all()
     )
     now = datetime.now(timezone.utc)
-    for entry in entries:
-        # Queue position
-        entry.queue_position = (
+
+    # Batch-fetch every waitlist row that could share a slot with any of this
+    # student's entries, in ONE query, instead of 2 queries per entry (was N+1).
+    if entries:
+        from collections import defaultdict
+        officer_ids = {e.officer_id for e in entries}
+        slot_dates  = {e.slot_date for e in entries}
+        slot_times  = {e.slot_time for e in entries}
+        related = (
             WaitlistEntry.query
-            .filter_by(
-                officer_id=entry.officer_id,
-                slot_date=entry.slot_date,
-                slot_time=entry.slot_time,
-            )
-            .filter(WaitlistEntry.joined_at <= entry.joined_at)
-            .count()
+            .filter(WaitlistEntry.officer_id.in_(officer_ids))
+            .filter(WaitlistEntry.slot_date.in_(slot_dates))
+            .filter(WaitlistEntry.slot_time.in_(slot_times))
+            .order_by(WaitlistEntry.joined_at)
+            .all()
         )
+        grouped = defaultdict(list)
+        for r in related:
+            grouped[(r.officer_id, r.slot_date, r.slot_time)].append(r)
+
+    for entry in entries:
+        siblings = grouped[(entry.officer_id, entry.slot_date, entry.slot_time)]
+        # Queue position
+        entry.queue_position = sum(1 for r in siblings if r.joined_at <= entry.joined_at)
         # Total waiters for this slot
-        entry.total_waiters = WaitlistEntry.query.filter_by(
-            officer_id=entry.officer_id,
-            slot_date=entry.slot_date,
-            slot_time=entry.slot_time,
-        ).count()
+        entry.total_waiters = len(siblings)
         # Warn if the appointment is very soon
         slot_dt = datetime.combine(entry.slot_date, datetime.strptime(
             entry.slot_time.split(' - ')[0].strip(), '%I:%M %p'
@@ -759,17 +654,22 @@ def get_slots():
     all_slots       = officer_slots_for_date(officer, date_obj)
     limit_reached   = officer.daily_limit > 0 and daily_count(officer.id, date_obj) >= officer.daily_limit
 
+    # One GROUP BY query for all slots' waiter counts, instead of one COUNT()
+    # query per slot (was N+1 — this endpoint fires on every calendar load).
+    from sqlalchemy import func
+    waiter_counts = dict(
+        db.session.query(WaitlistEntry.slot_time, func.count(WaitlistEntry.id))
+        .filter_by(officer_id=officer.id, slot_date=date_obj)
+        .group_by(WaitlistEntry.slot_time)
+        .all()
+    )
+
     slot_data = []
     for s in all_slots:
-        waiters = WaitlistEntry.query.filter_by(
-            officer_id=officer.id,
-            slot_date=date_obj,
-            slot_time=s,
-        ).count()
         slot_data.append({
             'time':      s,
             'available': s in available_slots,
-            'waiters':   waiters,
+            'waiters':   waiter_counts.get(s, 0),
         })
 
     return jsonify({
