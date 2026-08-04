@@ -1,0 +1,34 @@
+{# Expects: pagination (Flask-SQLAlchemy Pagination object), base_args (dict of
+   current filter querystring params, WITHOUT 'page', passed from the route) #}
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Page navigation" class="d-flex justify-content-between align-items-center mt-3 px-1">
+    <span class="text-muted small">
+        Showing {{ pagination.first }}&ndash;{{ pagination.last }} of {{ pagination.total }}
+    </span>
+    <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+            {% if pagination.has_prev %}
+            <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.prev_num, **base_args) }}"><i class="fas fa-chevron-left"></i></a>
+            {% else %}
+            <span class="page-link"><i class="fas fa-chevron-left"></i></span>
+            {% endif %}
+        </li>
+        {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if p %}
+                <li class="page-item {{ 'active' if p == pagination.page }}">
+                    <a class="page-link" href="{{ url_for(request.endpoint, page=p, **base_args) }}">{{ p }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+            {% if pagination.has_next %}
+            <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.next_num, **base_args) }}"><i class="fas fa-chevron-right"></i></a>
+            {% else %}
+            <span class="page-link"><i class="fas fa-chevron-right"></i></span>
+            {% endif %}
+        </li>
+    </ul>
+</nav>
+{% endif %}
