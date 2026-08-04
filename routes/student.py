@@ -5,7 +5,9 @@ from forms import AppointmentForm, ProfileForm, RescheduleForm
 from datetime import datetime, timedelta, timezone
 from flask_bcrypt import Bcrypt
 from services.appointment_service import AppointmentService
-import io, csv
+import io, csv, logging
+
+logger = logging.getLogger('iut.student')
 
 student_bp = Blueprint('student', __name__)
 bcrypt = Bcrypt()
@@ -595,7 +597,7 @@ def _promote_waitlist(officer_id, slot_date, slot_time):
             )
         except Exception as mail_err:
             # Log but don't crash — appointment is already saved
-            print(f'[IUT] Waitlist promotion email failed for user {user.id}: {mail_err}')
+            logger.warning('Waitlist promotion email failed for user %s: %s', user.id, mail_err, exc_info=True)
 
         return  # Only promote one person per slot opening
 
