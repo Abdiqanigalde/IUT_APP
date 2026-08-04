@@ -18,7 +18,6 @@ class User(db.Model, UserMixin):
     role            = db.Column(db.String(20), nullable=False, default='student')
     student_id_num  = db.Column(db.String(50), nullable=True)
     department      = db.Column(db.String(100), nullable=True)
-    profile_picture_url = db.Column(db.String(500), nullable=True)
     dark_mode       = db.Column(db.Boolean, default=False)
     is_active       = db.Column(db.Boolean, default=True)
     email_verified      = db.Column(db.Boolean, default=False)
@@ -185,6 +184,7 @@ class WaitlistEntry(db.Model):
     __table_args__ = (
         db.UniqueConstraint('officer_id', 'slot_date', 'slot_time', 'user_id',
                             name='uq_waitlist_student_slot'),
+        db.Index('ix_waitlist_officer_slot', 'officer_id', 'slot_date', 'slot_time'),
     )
 
 
