@@ -16,6 +16,8 @@ services:
         generateValue: true
       - key: FLASK_ENV
         value: production
+      - key: LOG_LEVEL
+        value: INFO
       - key: BREVO_API_KEY
         sync: false
       - key: MAIL_USERNAME
