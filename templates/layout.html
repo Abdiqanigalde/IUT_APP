@@ -537,7 +537,14 @@
                     <li class="nav-item dropdown ms-1">
                         <a class="nav-link dropdown-toggle p-0" href="#" data-bs-toggle="dropdown" style="position:relative;">
                             <div class="user-chip">
-                                <div class="user-avatar">{{ current_user.name[0].upper() if current_user.name else 'U' }}</div>
+                                {% if current_user.profile_picture_url %}
+                                    <div class="user-avatar" style="padding:0;overflow:hidden;">
+                                        <img src="{{ current_user.profile_picture_url }}" alt=""
+                                             style="width:100%;height:100%;object-fit:cover;">
+                                    </div>
+                                {% else %}
+                                    <div class="user-avatar">{{ current_user.name[0].upper() if current_user.name else 'U' }}</div>
+                                {% endif %}
                                 <span class="user-name d-none d-md-block">{{ current_user.name }}</span>
                                 {% set unread = current_user.notifications | selectattr('is_read','equalto',false) | list %}
                                 {% if unread %}
