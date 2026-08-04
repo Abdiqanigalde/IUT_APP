@@ -47,13 +47,28 @@ Visit `http://localhost:5000`
 
 ### Seed test data
 ```bash
-python test_app.py
+FLASK_ENV=development python seed_dev_data.py
 ```
 Creates: Admin `admin@iut-dhaka.edu / admin123` and Student `abdinadiif@iut-dhaka.edu / student123`
 
 ### Default super admin (auto-created on first run)
 - Email: `superadmin@iut-dhaka.edu`  
-- Password: `SuperAdmin@2026!`
+- Password: `SuperAdmin@2026!` (you'll be forced to change this on first login)
+
+---
+
+## ✅ Running Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests run against a throwaway temporary SQLite database (created and destroyed automatically) — they never touch your local `database/university.db` or any real data. Run a single file or test with:
+```bash
+pytest tests/test_auth.py
+pytest tests/test_auth.py::test_login_blocked_when_email_unverified
+```
 
 ---
 
