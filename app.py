@@ -1,1027 +1,705 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, Response, jsonify
-from flask_login import login_required, current_user
-from models import db, Appointment, User, Officer, Office, Notification, OfficerUnavailability, AuditLog, OfficerWorkingHours, GlobalHoliday
-from forms import OfficerForm, UnavailabilityForm, BulkUnavailabilityForm, WorkingHoursForm, RejectNoteForm, OfficerProfileForm, OfficeForm
-from routes.visa import upload_to_cloudinary
+import os
+
+from flask import Flask, redirect, url_for, render_template, session, request as flask_request
+from flask_login import LoginManager, current_user, logout_user
+from flask_wtf.csrf import CSRFProtect
+from flask_bcrypt import Bcrypt
+from flask_migrate import Migrate
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_socketio import SocketIO, emit, join_room
+from models import db, User
 from datetime import datetime, timedelta, timezone
-import csv, io, os, secrets
-from flask_bcrypt import Bcrypt as _Bcrypt
-_bcrypt_admin = _Bcrypt()
 
-admin_bp = Blueprint('admin', __name__)
+app = Flask(__name__)
 
-def admin_required(f):
-    from functools import wraps
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if current_user.role not in ('admin', 'super_admin'):
-            return redirect(url_for('index'))
-        return f(*args, **kwargs)
-    return decorated
-
-def log_action(action, detail):
-    db.session.add(AuditLog(admin_id=current_user.id, action=action, detail=detail))
-
-# ── Dashboard ─────────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/dashboard')
-@login_required
-@admin_required
-def dashboard():
-    from sqlalchemy import func, case
-    today = datetime.now(timezone.utc).date()
-
-    # Status counts — was 6 separate COUNT() queries, now 1 grouped query.
-    status_rows = db.session.query(Appointment.status, func.count(Appointment.id))\
-        .group_by(Appointment.status).all()
-    status_map = {status: cnt for status, cnt in status_rows}
-    total     = sum(status_map.values())
-    pending   = status_map.get('Pending', 0)
-    approved  = status_map.get('Approved', 0)
-    completed = status_map.get('Completed', 0)
-    rejected  = status_map.get('Rejected', 0)
-    cancelled = status_map.get('Cancelled', 0)
-
-    total_students  = User.query.filter_by(role='student').count()
-    active_students = User.query.filter_by(role='student', is_active=True).count()
-
-    today_schedule = Appointment.query.filter_by(date=today).order_by(Appointment.time).all()
-
-    # Last 7 days — was 7 separate COUNT() queries, now 1 grouped query.
-    week_start = today - timedelta(days=6)
-    daily_rows = db.session.query(Appointment.date, func.count(Appointment.id))\
-        .filter(Appointment.date >= week_start, Appointment.date <= today)\
-        .group_by(Appointment.date).all()
-    daily_map = {d: cnt for d, cnt in daily_rows}
-    weekly = []
-    for i in range(6, -1, -1):
-        d = today - timedelta(days=i)
-        weekly.append({'date': d.strftime('%a %d'), 'count': daily_map.get(d, 0)})
-
-    # This year, by month — was 12 separate COUNT() queries, now 1 grouped query.
-    month_rows = db.session.query(
-        func.extract('month', Appointment.date),
-        func.count(Appointment.id)
-    ).filter(func.extract('year', Appointment.date) == today.year)\
-     .group_by(func.extract('month', Appointment.date)).all()
-    month_map = {int(m): cnt for m, cnt in month_rows}
-    months_data = []
-    for m in range(1, 13):
-        months_data.append({'label': datetime(today.year, m, 1).strftime('%b'), 'count': month_map.get(m, 0)})
-
-    # Per-officer stats — was up to 4×N separate COUNT() queries, now 1 grouped query.
-    all_officers = Officer.query.all()
-    officer_names = [o.name for o in all_officers]
-
-    officer_rows = db.session.query(
-        Appointment.officer_id,
-        func.count(Appointment.id),
-        func.sum(case((Appointment.status == 'Approved', 1), else_=0)),
-        func.sum(case((Appointment.status == 'Completed', 1), else_=0)),
-        func.sum(case((Appointment.status == 'Rejected', 1), else_=0)),
-        func.sum(case((Appointment.status == 'Pending', 1), else_=0)),
-    ).group_by(Appointment.officer_id).all()
-    officer_stat_map = {
-        oid: {'total': tot, 'approved': appr or 0, 'completed': comp or 0,
-              'rejected': rej or 0, 'pending': pend or 0}
-        for oid, tot, appr, comp, rej, pend in officer_rows
-    }
-
-    # Today's approved/pending load per officer, to measure capacity utilization
-    # against each officer's daily_limit (0 = unlimited).
-    today_rows = db.session.query(
-        Appointment.officer_id, func.count(Appointment.id)
-    ).filter(
-        Appointment.date == today,
-        Appointment.status.in_(['Pending', 'Approved'])
-    ).group_by(Appointment.officer_id).all()
-    today_map = {oid: cnt for oid, cnt in today_rows}
-
-    officer_counts  = []
-    officer_stats   = []
-    for o in all_officers:
-        s = officer_stat_map.get(o.id, {'total': 0, 'approved': 0, 'completed': 0, 'rejected': 0, 'pending': 0})
-        today_load = today_map.get(o.id, 0)
-
-        if o.daily_limit and o.daily_limit > 0:
-            utilization = round((today_load / o.daily_limit) * 100)
-        else:
-            utilization = None  # unlimited capacity — utilization isn't meaningful
-
-        if s['pending'] >= 10 or (utilization is not None and utilization >= 90):
-            workload = 'overloaded'
-        elif s['pending'] == 0 and s['total'] == 0:
-            workload = 'idle'
-        elif s['pending'] <= 2 and (utilization is None or utilization < 50):
-            workload = 'light'
-        else:
-            workload = 'balanced'
-
-        officer_counts.append(s['total'])
-        officer_stats.append({
-            'name': o.name, 'total': s['total'], 'approved': s['approved'],
-            'completed': s['completed'], 'rejected': s['rejected'], 'pending': s['pending'],
-            'today_load': today_load, 'daily_limit': o.daily_limit or 0,
-            'utilization': utilization, 'workload': workload,
-        })
-
-    status_counts = {'Pending': pending, 'Approved': approved,
-                     'Completed': completed, 'Rejected': rejected, 'Cancelled': cancelled}
-
-    return render_template('admin/dashboard.html',
-        total=total, pending=pending, approved=approved,
-        completed=completed, rejected=rejected, cancelled=cancelled,
-        total_students=total_students, active_students=active_students,
-        today_schedule=today_schedule,
-        officers=officer_names, officer_counts=officer_counts,
-        officer_stats=officer_stats, status_counts=status_counts,
-        weekly=weekly, months_data=months_data, year=today.year)
-
-# ── Appointments ──────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/appointments', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def manage_appointments():
-    officer_filter = request.args.get('officer', '')
-    status_filter  = request.args.get('status', '')
-    date_filter    = request.args.get('date', '')
-    search         = request.args.get('search', '').strip()
-
-    from sqlalchemy.orm import contains_eager
-    query = Appointment.query.join(Officer).options(contains_eager(Appointment.officer))
-    if officer_filter:
-        try:
-            query = query.filter(Officer.id == int(officer_filter))
-        except ValueError:
-            pass
-    if status_filter:
-        query = query.filter(Appointment.status == status_filter)
-    if date_filter:
-        try:
-            query = query.filter(Appointment.date == datetime.strptime(date_filter, '%Y-%m-%d').date())
-        except ValueError:
-            pass
-    if search:
-        query = query.join(User, Appointment.user_id == User.id).filter(
-            db.or_(
-                Appointment.student_name.ilike(f'%{search}%'),
-                Appointment.student_id_num.ilike(f'%{search}%'),
-                User.email.ilike(f'%{search}%'),
-            )
+# ── Config ────────────────────────────────────────────────────────────────────
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError(
+            'SECRET_KEY environment variable is required in production. '
+            'Set it in your Render Environment tab (Render can auto-generate one).'
         )
+    print('WARNING: SECRET_KEY not set — using an insecure dev-only fallback. '
+          'This is fine for local development but must never happen in production.')
+    _secret_key = 'dev-only-insecure-secret-key-change-me'
+app.config['SECRET_KEY'] = _secret_key
+basedir = os.path.abspath(os.path.dirname(__file__))
 
-    appointments_page = db.paginate(
-        query.order_by(Appointment.date.desc(), Appointment.time.desc()),
-        page=request.args.get('page', 1, type=int), per_page=25, error_out=False
+database_url = os.environ.get(
+    'DATABASE_URL',
+    'sqlite:///' + os.path.join(basedir, 'database', 'university.db')
+)
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
+if database_url.startswith('postgresql://') and '+' not in database_url:
+    database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+
+app.config['SQLALCHEMY_DATABASE_URI']        = database_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle':  300,
+}
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB cap on any single request body (uploads: visa docs, officer photos)
+
+# ── Email (Brevo HTTP API — see utils.send_email) ──────────────────────────────
+# The app sends all mail through Brevo's HTTP API, not SMTP, because Render's
+# free tier blocks outbound SMTP ports. BREVO_API_KEY is the required env var;
+# MAIL_USERNAME is only used as the "from" address shown to recipients.
+app.config['BREVO_API_KEY'] = os.environ.get('BREVO_API_KEY', '')
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'noreply@iut-dhaka.edu')
+if not app.config['BREVO_API_KEY']:
+    print(
+        'WARNING: BREVO_API_KEY is not set. Email verification and password reset '
+        'links will not be sent — affected users will be unable to log in or '
+        'recover their password. Set BREVO_API_KEY before inviting real users.'
     )
-    appointments = appointments_page.items
-    all_officers = Officer.query.all()
 
-    if request.method == 'POST':
-        ids    = request.form.getlist('selected_ids')
-        action = request.form.get('bulk_action')
-        if ids and action in ['Approved', 'Rejected']:
-            for aid in ids:
-                apt = db.session.get(Appointment, int(aid))
-                if apt and apt.status == 'Pending':
-                    apt.status = action
-                    msg = f"Your appointment with {apt.officer.name} on {apt.date.strftime('%d %b %Y')} has been {action}."
-                    db.session.add(Notification(user_id=apt.user_id, message=msg))
-                    student = db.session.get(User, apt.user_id)
-                    from utils import send_email, appointment_status_email
-                    send_email(f"Appointment {action} — IUT", [student.email], appointment_status_email(apt, action))
-            log_action(f'bulk_{action.lower()}', f"Bulk {action} on {len(ids)} appointment(s)")
-            db.session.commit()
-            flash(f'{len(ids)} appointment(s) {action.lower()}.', 'success')
-        return redirect(url_for('admin.manage_appointments',
-                                officer=officer_filter, status=status_filter, date=date_filter, search=search))
+# ── Extensions ────────────────────────────────────────────────────────────────
+csrf     = CSRFProtect(app)
+db.init_app(app)
+migrate  = Migrate(app, db)
+bcrypt   = Bcrypt(app)
+_allowed_origin = (
+    os.environ.get('APP_URL')
+    or os.environ.get('RENDER_EXTERNAL_URL')
+    or ('*' if os.environ.get('FLASK_ENV') != 'production' else None)
+)
+if _allowed_origin is None:
+    print('WARNING: Could not determine the app\'s public URL in production — Socket.IO '
+          'CORS is falling back to "*". Set APP_URL to your app\'s URL to lock this down.')
+    _allowed_origin = '*'
+socketio = SocketIO(app, cors_allowed_origins=_allowed_origin, async_mode='threading')
 
-    base_args = {'officer': officer_filter, 'status': status_filter, 'date': date_filter, 'search': search}
-    return render_template('admin/appointments.html', appointments=appointments,
-                           all_officers=all_officers, pagination=appointments_page, base_args=base_args,
-                           officer_filter=officer_filter, status_filter=status_filter, date_filter=date_filter,
-                           search=search)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "60 per hour"],
+    storage_uri="memory://",
+)
+
+login_manager = LoginManager(app)
+login_manager.login_view             = 'auth.login'
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    if exception:
+        db.session.rollback()
+    db.session.remove()
 
 
-@admin_bp.route('/admin/update_status/<int:appointment_id>/<string:status>', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def update_status(appointment_id, status):
-    apt = db.session.get(Appointment, appointment_id)
-    if not apt:
-        return redirect(url_for('admin.manage_appointments'))
+# ── DB init + auto-migrations ─────────────────────────────────────────────────
+with app.app_context():
+    db_dir = os.path.join(basedir, 'database')
+    os.makedirs(db_dir, exist_ok=True)
+    db.create_all()
 
-    if status == 'Rejected':
-        form = RejectNoteForm()
-        if form.validate_on_submit():
-            apt.status = 'Rejected'
-            apt.rejection_note = form.rejection_note.data
-            from models import AppointmentTimeline
-            db.session.add(AppointmentTimeline(appointment_id=apt.id, status='Rejected',
-                                               note=form.rejection_note.data))
-            msg = f"Your appointment with {apt.officer.name} on {apt.date.strftime('%d %b %Y')} was rejected. Reason: {form.rejection_note.data}"
-            db.session.add(Notification(user_id=apt.user_id, message=msg))
-            student = db.session.get(User, apt.user_id)
-            from utils import send_email, rejection_email
-            send_email("Appointment Rejected — IUT", [student.email],
-                       rejection_email(apt, student, form.rejection_note.data))
-            from routes.student import _promote_waitlist
-            _promote_waitlist(apt)
-            log_action('appointment_rejected',
-                       f"#{apt.id} ({apt.student_name} with {apt.officer.name} on {apt.date}) — {form.rejection_note.data}")
-            db.session.commit()
-            flash('Appointment rejected with note.', 'info')
-            return redirect(url_for('admin.manage_appointments'))
-        return render_template('admin/reject_modal.html', form=form, apt=apt)
-
-    if status in ['Approved', 'Completed']:
-        apt.status = status
-        msg = f"Your appointment with {apt.officer.name} on {apt.date.strftime('%d %b %Y')} at {apt.time} has been {status}."
-        db.session.add(Notification(user_id=apt.user_id, message=msg))
-        student = db.session.get(User, apt.user_id)
-
-        from models import AppointmentTimeline
-        db.session.add(AppointmentTimeline(appointment_id=apt.id, status=status,
-                                           note=f"Status set to {status} by admin."))
-
-        if status == 'Approved':
-            if not apt.qr_code_data:
-                import secrets as _s
-                from app import generate_qr_data
-                qr_data, _ = generate_qr_data(apt.id, _s.token_urlsafe(16))
-                apt.qr_code_data = qr_data
-            from app import generate_qr_data as _gqr
-            _, qr_b64 = _gqr(apt.id, apt.qr_code_data.split('-')[2] if apt.qr_code_data else 'x')
-            from utils import send_email, qr_appointment_email
-            send_email(f"Appointment Approved + QR Ticket — IUT", [student.email],
-                       qr_appointment_email(apt, student, qr_b64))
+    # ── User.must_change_password: column self-heal (must run before ANY query
+    # touches the User table, since the super_admin check below is one) ────────
+    try:
+        from sqlalchemy import text as _mcp_text, inspect as _mcp_inspect
+        _user_cols = {c['name'] for c in _mcp_inspect(db.engine).get_columns('user')}
+        if 'must_change_password' not in _user_cols:
+            with db.engine.connect() as _mcp_conn:
+                _mcp_conn.execute(_mcp_text(
+                    'ALTER TABLE "user" ADD COLUMN must_change_password BOOLEAN DEFAULT FALSE'
+                ))
+                _mcp_conn.commit()
+            print('[IUT] user.must_change_password column added ✅')
         else:
-            from utils import send_email, appointment_status_email
-            send_email(f"Appointment {status} — IUT", [student.email], appointment_status_email(apt, status))
+            print('[IUT] user.must_change_password already exists — skipping.')
+    except Exception as _mcp_err:
+        print(f'[IUT] must_change_password column migration error (non-fatal): {_mcp_err}')
 
-        log_action(f'appointment_{status.lower()}',
-                   f"#{apt.id} ({apt.student_name} with {apt.officer.name} on {apt.date}) → {status}")
+    # ── Auto-create super_admin if none exists ────────────────────────────────
+    if not User.query.filter_by(role='super_admin').first():
+        from flask_bcrypt import Bcrypt as _B
+        _b = _B()
+        sa = User(
+            name='Super Admin',
+            email='superadmin@iut-dhaka.edu',
+            password=_b.generate_password_hash('SuperAdmin@2026!').decode('utf-8'),
+            role='super_admin',
+            email_verified=True,
+            is_active=True,
+            must_change_password=True,
+        )
+        db.session.add(sa)
         db.session.commit()
+        print('[IUT] Default super_admin created: superadmin@iut-dhaka.edu / SuperAdmin@2026!')
 
-        try:
-            from app import push_status_update
-            push_status_update(apt.user_id, apt.id, status, msg)
-        except Exception:
-            pass
+    # ── WaitlistEntry migration: appointment_id → slot-based ─────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect
+        inspector  = sa_inspect(db.engine)
+        cols       = {c['name'] for c in inspector.get_columns('waitlist_entry')}
+        is_pg      = 'postgresql' in str(db.engine.url)
 
-        flash(f'Appointment marked as {status}.', 'success')
-    return redirect(request.referrer or url_for('admin.manage_appointments'))
+        if 'officer_id' in cols:
+            print('[IUT] WaitlistEntry already migrated — skipping.')
 
-# ── Student management ────────────────────────────────────────────────────────
-@admin_bp.route('/admin/students')
-@login_required
-@admin_required
-def manage_students():
-    search = request.args.get('search', '').strip()
-    dept   = request.args.get('department', '').strip()
-    status = request.args.get('status', '').strip()
+        elif 'appointment_id' in cols:
+            print('[IUT] Migrating WaitlistEntry to slot-based schema…')
+            with db.engine.connect() as conn:
+                conn.execute(text("ALTER TABLE waitlist_entry ADD COLUMN officer_id INTEGER"))
+                conn.execute(text("ALTER TABLE waitlist_entry ADD COLUMN slot_date DATE"))
+                conn.execute(text("ALTER TABLE waitlist_entry ADD COLUMN slot_time VARCHAR(30)"))
+                conn.commit()
 
-    query = User.query.filter_by(role='student')
-    if search:
-        query = query.filter(
-            db.or_(User.name.ilike(f'%{search}%'),
-                   User.email.ilike(f'%{search}%'),
-                   User.student_id_num.ilike(f'%{search}%')))
-    if dept:
-        query = query.filter(User.department.ilike(f'%{dept}%'))
-    if status == 'active':
-        query = query.filter_by(is_active=True)
-    elif status == 'inactive':
-        query = query.filter_by(is_active=False)
-
-    students_page = db.paginate(
-        query.order_by(User.created_at.desc()),
-        page=request.args.get('page', 1, type=int), per_page=25, error_out=False
-    )
-    students    = students_page.items
-    departments = db.session.query(User.department).filter(User.role == 'student', User.department != None).distinct().all()
-    departments = [d[0] for d in departments if d[0]]
-
-    base_args = {'search': search, 'department': dept, 'status': status}
-    return render_template('admin/students.html', students=students,
-                           pagination=students_page, base_args=base_args,
-                           search=search, dept=dept, status_filter=status,
-                           departments=departments)
-
-
-@admin_bp.route('/admin/student/<int:user_id>/toggle')
-@login_required
-@admin_required
-def toggle_student(user_id):
-    user = db.session.get(User, user_id)
-    if user and user.role == 'student':
-        user.is_active = not user.is_active
-        action = 'activated' if user.is_active else 'deactivated'
-        log_action(f'student_{action}', f"Student {user.name} ({user.email}) {action}")
-        db.session.commit()
-        flash(f'Student account {action}.', 'success')
-    return redirect(url_for('admin.manage_students'))
-
-
-@admin_bp.route('/admin/student/<int:user_id>')
-@login_required
-@admin_required
-def student_detail(user_id):
-    student = db.session.get(User, user_id)
-    if not student or student.role != 'student':
-        from flask import abort; abort(404)
-    appointments = Appointment.query.filter_by(user_id=user_id).order_by(Appointment.date.desc()).all()
-    return render_template('admin/student_detail.html', student=student, appointments=appointments)
-
-# ── Officers ──────────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/officers', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def manage_officers():
-    form = OfficerProfileForm()
-    offices = Office.query.order_by(Office.sort_order, Office.name).all()
-    form.office.choices = [(0, '— No office / unassigned —')] + [
-        (o.id, o.name if o.is_active else f'{o.name} (inactive)') for o in offices
-    ]
-
-    if form.validate_on_submit():
-        if User.query.filter_by(email=form.login_email.data).first():
-            flash('Login email already in use. Choose a different one.', 'danger')
-        else:
-            off_days  = ','.join(form.recurring_off_days.data) if form.recurring_off_days.data else ''
-            hashed_pw = _bcrypt_admin.generate_password_hash(form.login_password.data).decode('utf-8')
-            user = User(
-                name=form.name.data, email=form.login_email.data,
-                password=hashed_pw, role='officer',
-                is_active=True, email_verified=True
-            )
-            db.session.add(user)
-            db.session.flush()
-
-            assigned_office_id = form.office.data if form.office.data else None
-
-            photo_final_url = form.photo_url.data if form.photo_url.data else None
-            if form.photo.data and getattr(form.photo.data, 'filename', ''):
-                uploaded_url = upload_to_cloudinary(
-                    form.photo.data, 'officers', f'officer_new_{int(datetime.now(timezone.utc).timestamp())}'
-                )
-                if uploaded_url:
-                    photo_final_url = uploaded_url
+                if is_pg:
+                    conn.execute(text("""
+                        UPDATE waitlist_entry we
+                        SET  officer_id = a.officer_id,
+                             slot_date  = a.date,
+                             slot_time  = a.time
+                        FROM appointment a
+                        WHERE a.id = we.appointment_id
+                    """))
                 else:
-                    flash('Photo upload failed — check the file type (jpg/jpeg/png/webp). Officer was still saved.', 'warning')
+                    conn.execute(text("""
+                        UPDATE waitlist_entry
+                        SET officer_id = (
+                                SELECT officer_id FROM appointment
+                                WHERE appointment.id = waitlist_entry.appointment_id),
+                            slot_date  = (
+                                SELECT date FROM appointment
+                                WHERE appointment.id = waitlist_entry.appointment_id),
+                            slot_time  = (
+                                SELECT time FROM appointment
+                                WHERE appointment.id = waitlist_entry.appointment_id)
+                        WHERE appointment_id IS NOT NULL
+                    """))
+                conn.commit()
 
-            officer = Officer(
-                name=form.name.data, designation=form.designation.data,
-                office_id=assigned_office_id,
-                bio=form.bio.data, handles=form.handles.data,
-                email=form.login_email.data, room=form.room.data,
-                photo_url=photo_final_url,
-                work_start=form.work_start.data, work_end=form.work_end.data,
-                daily_limit=form.daily_limit.data, recurring_off_days=off_days
-            )
-            db.session.add(officer)
+                deleted = conn.execute(text(
+                    "DELETE FROM waitlist_entry WHERE officer_id IS NULL"
+                )).rowcount
+                if deleted:
+                    print(f'[IUT] Removed {deleted} orphaned waitlist entries.')
+                conn.commit()
 
-            office_note = ' (no office assigned)'
-            if assigned_office_id:
-                office = db.session.get(Office, assigned_office_id)
-                if office:
-                    if not office.is_active:
-                        office.is_active = True
-                    office_note = f' under "{office.name}"'
+                if is_pg:
+                    conn.execute(text("ALTER TABLE waitlist_entry DROP COLUMN IF EXISTS appointment_id"))
+                    conn.execute(text("""
+                        ALTER TABLE waitlist_entry
+                        ADD CONSTRAINT uq_waitlist_student_slot
+                        UNIQUE (officer_id, slot_date, slot_time, user_id)
+                    """))
+                else:
+                    conn.execute(text("""
+                        CREATE TABLE waitlist_entry_new (
+                            id             INTEGER PRIMARY KEY,
+                            officer_id     INTEGER NOT NULL REFERENCES officer(id),
+                            slot_date      DATE    NOT NULL,
+                            slot_time      VARCHAR(30) NOT NULL,
+                            user_id        INTEGER NOT NULL REFERENCES user(id),
+                            student_name   VARCHAR(100) NOT NULL,
+                            student_id_num VARCHAR(50)  NOT NULL,
+                            department     VARCHAR(100) NOT NULL,
+                            issue          TEXT    NOT NULL,
+                            joined_at      DATETIME,
+                            UNIQUE (officer_id, slot_date, slot_time, user_id)
+                        )
+                    """))
+                    conn.execute(text("""
+                        INSERT INTO waitlist_entry_new
+                            (id, officer_id, slot_date, slot_time, user_id,
+                             student_name, student_id_num, department, issue, joined_at)
+                        SELECT
+                            id, officer_id, slot_date, slot_time, user_id,
+                            student_name, student_id_num, department, issue, joined_at
+                        FROM waitlist_entry
+                        WHERE officer_id IS NOT NULL
+                    """))
+                    conn.execute(text("DROP TABLE waitlist_entry"))
+                    conn.execute(text("ALTER TABLE waitlist_entry_new RENAME TO waitlist_entry"))
+                conn.commit()
 
-            db.session.commit()
-            log_action('officer_added', f"Added {officer.name} ({officer.designation}) with login {form.login_email.data}")
-            flash(f'Officer added{office_note}! Login: {form.login_email.data} / Password: {form.login_password.data}', 'success')
-            return redirect(url_for('admin.manage_officers'))
+            print('[IUT] WaitlistEntry migration complete ✅')
 
-    officers = Officer.query.all()
-    today    = datetime.now(timezone.utc).date()
-    return render_template('admin/officers.html', officers=officers, form=form, today=today, offices=offices)
-
-
-@admin_bp.route('/admin/officer/delete/<int:officer_id>')
-@login_required
-@admin_required
-def delete_officer(officer_id):
-    officer = db.session.get(Officer, officer_id)
-    if not officer:
-        flash('Officer not found.', 'danger')
-        return redirect(url_for('admin.manage_officers'))
-
-    appointments = Appointment.query.filter_by(officer_id=officer_id).all()
-    for apt in appointments:
-        apt.status     = 'Cancelled'
-        apt.officer_id = None
-        apt.rejection_note = f'Officer {officer.name} was removed from the system.'
-        db.session.add(Notification(
-            user_id=apt.user_id,
-            message=f'Your appointment with {officer.name} on '
-                    f'{apt.date.strftime("%d %b %Y")} was cancelled '
-                    f'because the officer was removed.'
-        ))
-
-    linked_user = User.query.filter_by(email=officer.email, role='officer').first()
-    log_action('officer_deleted', f'Deleted {officer.name} — {len(appointments)} appointment(s) cancelled')
-    db.session.delete(officer)
-    if linked_user:
-        db.session.delete(linked_user)
-    db.session.commit()
-    flash(f'Officer removed successfully. {len(appointments)} appointment(s) cancelled.', 'success')
-    return redirect(url_for('admin.manage_officers'))
-
-
-@admin_bp.route('/admin/officers/<int:officer_id>/edit', methods=['POST'])
-@login_required
-@admin_required
-def edit_officer(officer_id):
-    officer = db.session.get(Officer, officer_id)
-    if not officer:
-        flash('Officer not found.', 'danger')
-        return redirect(url_for('admin.manage_officers'))
-
-    officer.name        = request.form.get('edit_name',        officer.name).strip()
-    officer.designation = request.form.get('edit_designation', officer.designation).strip()
-    edit_office_id       = request.form.get('edit_office_id', '')
-    officer.office_id    = int(edit_office_id) if edit_office_id and edit_office_id != '0' else None
-    officer.handles     = request.form.get('edit_handles',     officer.handles or '').strip()
-    officer.room        = request.form.get('edit_room',        officer.room or '').strip()
-
-    edit_photo_url_text = request.form.get('edit_photo_url', '').strip()
-    edit_photo_file      = request.files.get('edit_photo_file')
-    if edit_photo_file and edit_photo_file.filename:
-        uploaded_url = upload_to_cloudinary(
-            edit_photo_file, 'officers', f'officer_{officer.id}_{int(datetime.now(timezone.utc).timestamp())}'
-        )
-        if uploaded_url:
-            officer.photo_url = uploaded_url
         else:
-            flash('Photo upload failed — check the file type (jpg/jpeg/png/webp). Other changes were still saved.', 'warning')
-    elif edit_photo_url_text:
-        officer.photo_url = edit_photo_url_text
+            print('[IUT] WaitlistEntry table is new — no migration needed.')
 
-    officer.work_start  = request.form.get('edit_work_start',  officer.work_start or '08:00').strip()
-    officer.work_end    = request.form.get('edit_work_end',    officer.work_end or '17:00').strip()
-    officer.daily_limit = int(request.form.get('edit_daily_limit', officer.daily_limit or 0))
-    officer.is_active   = request.form.get('edit_is_active', '1') == '1'
-    officer.handles_referred_exam = request.form.get('edit_handles_referred_exam') == '1'
+    except Exception as _mig_err:
+        print(f'[IUT] WaitlistEntry migration error (non-fatal): {_mig_err}')
 
-    office_note = ' (no office assigned)'
-    if officer.office_id:
-        office = db.session.get(Office, officer.office_id)
-        if office:
-            if not office.is_active:
-                office.is_active = True
-            office_note = f' under "{office.name}"'
+    # ── Cal.com migration: new columns + appointment_history table ────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect2
+        inspector2 = sa_inspect2(db.engine)
+        is_pg2     = 'postgresql' in str(db.engine.url)
 
-    db.session.commit()
-    log_action('officer_updated', f"Updated officer profile: {officer.name}")
-    flash(f'{officer.name} updated successfully{office_note}.', 'success')
-    return redirect(url_for('admin.manage_officers'))
+        apt_cols = {c['name'] for c in inspector2.get_columns('appointment')}
+        new_cols = {
+            'duration':     'INTEGER DEFAULT 15',
+            'notes':        'TEXT',
+            'meeting_type': "VARCHAR(50) DEFAULT 'in_person'",
+            'timezone':     "VARCHAR(50) DEFAULT 'Asia/Dhaka'",
+            'location':     'VARCHAR(255)',
+        }
+        with db.engine.connect() as conn:
+            for col, definition in new_cols.items():
+                if col not in apt_cols:
+                    conn.execute(text(f'ALTER TABLE appointment ADD COLUMN {col} {definition}'))
+                    print(f'[IUT] Cal.com migration: added appointment.{col}')
+            conn.commit()
 
-# ── Offices ───────────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/offices', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def manage_offices():
-    form = OfficeForm()
-    if form.validate_on_submit():
-        base_slug = form.name.data.strip().lower().replace(' ', '-')
-        base_slug = ''.join(ch for ch in base_slug if ch.isalnum() or ch == '-')
-        slug = base_slug
-        n = 1
-        while Office.query.filter_by(slug=slug).first():
-            n += 1
-            slug = f'{base_slug}-{n}'
-
-        office = Office(
-            name=form.name.data.strip(), slug=slug,
-            description=form.description.data,
-            icon=form.icon.data or 'fa-building',
-            sort_order=form.sort_order.data or 0,
-            is_active=True
-        )
-        db.session.add(office)
-        db.session.commit()
-        log_action('office_added', f"Added office '{office.name}'")
-        flash(f'Office "{office.name}" created.', 'success')
-        return redirect(url_for('admin.manage_offices'))
-
-    offices = Office.query.order_by(Office.sort_order, Office.name).all()
-    return render_template('admin/offices.html', offices=offices, form=form)
-
-
-@admin_bp.route('/admin/offices/<int:office_id>/edit', methods=['POST'])
-@login_required
-@admin_required
-def edit_office(office_id):
-    office = db.session.get(Office, office_id)
-    if not office:
-        flash('Office not found.', 'danger')
-        return redirect(url_for('admin.manage_offices'))
-
-    office.name        = request.form.get('edit_office_name', office.name).strip()
-    office.description = request.form.get('edit_office_description', office.description or '').strip()
-    office.icon        = request.form.get('edit_office_icon', office.icon or 'fa-building').strip() or 'fa-building'
-    office.sort_order  = int(request.form.get('edit_office_sort_order', office.sort_order or 0))
-    office.is_active   = request.form.get('edit_office_is_active', '1') == '1'
-
-    db.session.commit()
-    log_action('office_updated', f"Updated office: {office.name}")
-    flash(f'{office.name} updated successfully.', 'success')
-    return redirect(url_for('admin.manage_offices'))
-
-
-@admin_bp.route('/admin/offices/<int:office_id>/delete')
-@login_required
-@admin_required
-def delete_office(office_id):
-    office = db.session.get(Office, office_id)
-    if not office:
-        flash('Office not found.', 'danger')
-        return redirect(url_for('admin.manage_offices'))
-
-    officer_count = Officer.query.filter_by(office_id=office_id).count()
-    for off in Officer.query.filter_by(office_id=office_id).all():
-        off.office_id = None
-
-    log_action('office_deleted', f"Deleted office '{office.name}' — {officer_count} officer(s) unassigned")
-    db.session.delete(office)
-    db.session.commit()
-    flash(f'Office removed. {officer_count} officer(s) are now unassigned (not deleted).', 'success')
-    return redirect(url_for('admin.manage_offices'))
-
-
-# ── Working hours ─────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/officer/<int:officer_id>/hours', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def manage_hours(officer_id):
-    officer = db.session.get(Officer, officer_id)
-    form    = WorkingHoursForm()
-    if form.validate_on_submit():
-        existing = OfficerWorkingHours.query.filter_by(officer_id=officer_id, weekday=form.weekday.data).first()
-        if existing:
-            existing.start_time = form.start_time.data
-            existing.end_time   = form.end_time.data
+        all_tables = inspector2.get_table_names()
+        if 'appointment_history' not in all_tables:
+            with db.engine.connect() as conn:
+                if is_pg2:
+                    conn.execute(text('''
+                        CREATE TABLE appointment_history (
+                            id             SERIAL PRIMARY KEY,
+                            appointment_id INTEGER NOT NULL REFERENCES appointment(id),
+                            action         VARCHAR(50) NOT NULL,
+                            old_value      TEXT,
+                            new_value      TEXT,
+                            changed_by     INTEGER REFERENCES "user"(id),
+                            note           TEXT,
+                            timestamp      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    '''))
+                else:
+                    conn.execute(text('''
+                        CREATE TABLE appointment_history (
+                            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                            appointment_id INTEGER NOT NULL REFERENCES appointment(id),
+                            action         VARCHAR(50) NOT NULL,
+                            old_value      TEXT,
+                            new_value      TEXT,
+                            changed_by     INTEGER REFERENCES user(id),
+                            note           TEXT,
+                            timestamp      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    '''))
+                conn.commit()
+            print('[IUT] Cal.com migration: created appointment_history table ✅')
         else:
-            db.session.add(OfficerWorkingHours(officer_id=officer_id, weekday=form.weekday.data,
-                start_time=form.start_time.data, end_time=form.end_time.data))
-        db.session.commit()
-        flash('Working hours saved!', 'success')
-        return redirect(url_for('admin.manage_hours', officer_id=officer_id))
-    hours = {wh.weekday: wh for wh in officer.working_hours}
-    days  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-    return render_template('admin/working_hours.html', officer=officer, form=form, hours=hours, days=days)
+            print('[IUT] Cal.com migration: appointment_history already exists — skipping.')
 
-# ── Unavailability ────────────────────────────────────────────────────────────
+    except Exception as _calcom_err:
+        print(f'[IUT] Cal.com migration error (non-fatal): {_calcom_err}')
 
-def _cancel_affected_appointments(officer, start_date, end_date, reason):
-    """Reject any Pending/Approved appointments that fall inside a new
-    unavailability window, and notify the affected students. Shared by the
-    single-officer and bulk unavailability flows so the behavior stays identical."""
-    affected = Appointment.query.filter(
-        Appointment.officer_id == officer.id,
-        Appointment.date >= start_date,
-        Appointment.date <= end_date,
-        Appointment.status.in_(['Pending', 'Approved'])
-    ).all()
-    for apt in affected:
-        apt.status         = 'Rejected'
-        apt.rejection_note = reason
-        db.session.add(Notification(user_id=apt.user_id,
-            message=f"Your appointment with {officer.name} on {apt.date} was cancelled: {reason}"))
-        student = db.session.get(User, apt.user_id)
-        from utils import send_email, rejection_email
-        send_email("Appointment Cancelled — IUT", [student.email],
-                   rejection_email(apt, student, reason))
-    return affected
+    # ── officer_id nullable migration ─────────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect3
+        inspector3 = sa_inspect3(db.engine)
+        is_pg3     = 'postgresql' in str(db.engine.url)
 
+        if is_pg3:
+            with db.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'appointment'
+                    AND column_name  = 'officer_id'
+                """)).fetchone()
 
-@admin_bp.route('/admin/officer/<int:officer_id>/unavailability', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def manage_unavailability(officer_id):
-    officer = db.session.get(Officer, officer_id)
-    form    = UnavailabilityForm()
-    if form.validate_on_submit():
-        if form.end_date.data < form.start_date.data:
-            flash('End date cannot be before start date.', 'danger')
+                if result and result[0] == 'NO':
+                    conn.execute(text(
+                        'ALTER TABLE appointment ALTER COLUMN officer_id DROP NOT NULL'
+                    ))
+                    conn.commit()
+                    print('[IUT] officer_id nullable migration: done ✅')
+                else:
+                    print('[IUT] officer_id nullable migration: already applied — skipping.')
         else:
-            u = OfficerUnavailability(officer_id=officer.id, start_date=form.start_date.data,
-                                      end_date=form.end_date.data, reason=form.reason.data)
-            db.session.add(u)
-            db.session.commit()
-            affected = _cancel_affected_appointments(officer, form.start_date.data,
-                                                       form.end_date.data, form.reason.data)
-            log_action('unavailability_added',
-                f"{officer.name} unavailable {form.start_date.data}–{form.end_date.data}: {form.reason.data}")
-            db.session.commit()
-            flash(f'Unavailability added. {len(affected)} appointment(s) cancelled.', 'success')
-            return redirect(url_for('admin.manage_unavailability', officer_id=officer.id))
-    periods = OfficerUnavailability.query.filter_by(officer_id=officer.id)\
-        .order_by(OfficerUnavailability.start_date).all()
-    today = datetime.now(timezone.utc).date()
-    return render_template('admin/unavailability.html', officer=officer, form=form, periods=periods, today=today)
+            print('[IUT] officer_id nullable migration: SQLite — skipping (handled by model).')
 
+    except Exception as _nullable_err:
+        print(f'[IUT] officer_id nullable migration error (non-fatal): {_nullable_err}')
 
-@admin_bp.route('/admin/unavailability/bulk', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def bulk_unavailability():
-    officers = Officer.query.filter_by(is_active=True).order_by(Officer.name).all()
-    form = BulkUnavailabilityForm()
-    form.officer_ids.choices = [(o.id, f"{o.name} ({o.designation})") for o in officers]
-
-    if form.validate_on_submit():
-        if form.end_date.data < form.start_date.data:
-            flash('End date cannot be before start date.', 'danger')
-            return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
-
-        span_days = (form.end_date.data - form.start_date.data).days
-        if span_days > 366:
-            flash('Date range is too large (max 1 year). Please narrow it down.', 'danger')
-            return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
-
-        selected_officers = Officer.query.filter(Officer.id.in_(form.officer_ids.data)).all()
-
-        # Work out the concrete date range(s) this applies to.
-        if form.mode.data == 'recurring':
-            weekday = form.recurring_weekday.data
-            occurrence_dates = []
-            d = form.start_date.data
-            while d <= form.end_date.data:
-                if d.weekday() == weekday:
-                    occurrence_dates.append(d)
-                d += timedelta(days=1)
-            if not occurrence_dates:
-                flash('No matching dates found in that range for the selected weekday.', 'warning')
-                return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
-            weekday_name = dict(form.recurring_weekday.choices)[weekday]
-            note = f"{form.reason.data} (recurring: every {weekday_name})"
-            date_ranges = [(dt, dt) for dt in occurrence_dates]
+    # ── visa_application table migration ──────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect4
+        inspector4  = sa_inspect4(db.engine)
+        all_tables4 = inspector4.get_table_names()
+        if 'visa_application' not in all_tables4:
+            db.create_all()
+            print('[IUT] visa_application table created ✅')
         else:
-            note = form.reason.data
-            date_ranges = [(form.start_date.data, form.end_date.data)]
+            print('[IUT] visa_application table already exists — skipping.')
+    except Exception as _visa_err:
+        print(f'[IUT] visa_application migration error (non-fatal): {_visa_err}')
 
-        total_periods = 0
-        total_cancelled = 0
-        for officer in selected_officers:
-            for (s, e) in date_ranges:
-                db.session.add(OfficerUnavailability(officer_id=officer.id, start_date=s,
-                                                       end_date=e, reason=note))
-                total_periods += 1
+    # ── GlobalHoliday table migration ─────────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect5
+        inspector5  = sa_inspect5(db.engine)
+        all_tables5 = inspector5.get_table_names()
+        is_pg5      = 'postgresql' in str(db.engine.url)
+
+        if 'global_holiday' not in all_tables5:
+            db.create_all()
+            print('[IUT] global_holiday table created ✅')
+        else:
+            print('[IUT] global_holiday table already exists — skipping.')
+
+        # Ensure reason + created_by columns exist
+        holiday_cols = {c['name'] for c in inspector5.get_columns('global_holiday')}
+        with db.engine.connect() as conn:
+            if 'reason' not in holiday_cols:
+                conn.execute(text('ALTER TABLE global_holiday ADD COLUMN reason VARCHAR(255)'))
+                conn.commit()
+                print('[IUT] global_holiday: added reason column ✅')
+            if 'created_by' not in holiday_cols:
+                ref = 'REFERENCES "user"(id)' if is_pg5 else 'REFERENCES user(id)'
+                conn.execute(text(f'ALTER TABLE global_holiday ADD COLUMN created_by INTEGER {ref}'))
+                conn.commit()
+                print('[IUT] global_holiday: added created_by column ✅')
+
+    except Exception as _holiday_err:
+        print(f'[IUT] global_holiday migration error (non-fatal): {_holiday_err}')
+
+    # ── Office table + column self-heal migration ───────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect6
+        from models import Office
+
+        inspector6  = sa_inspect6(db.engine)
+        all_tables6 = inspector6.get_table_names()
+
+        if 'office' not in all_tables6:
+            db.create_all()
+            print('[IUT] office table created ✅')
+        else:
+            print('[IUT] office table already exists — checking columns...')
+
+        # Re-inspect (table may have just been created above) and add ANY
+        # column that's missing, regardless of why it's missing. This makes
+        # the migration self-healing even if the table was created earlier
+        # with an incomplete schema.
+        office_cols6 = {c['name'] for c in sa_inspect6(db.engine).get_columns('office')}
+        office_column_defs = {
+            'slug':        "VARCHAR(150)",
+            'description': "TEXT",
+            'icon':        "VARCHAR(50) DEFAULT 'fa-building'",
+            'sort_order':  "INTEGER DEFAULT 0",
+            'is_active':   "BOOLEAN DEFAULT TRUE",
+        }
+        for col_name, col_def in office_column_defs.items():
+            if col_name not in office_cols6:
+                with db.engine.connect() as conn:
+                    conn.execute(text(f'ALTER TABLE office ADD COLUMN {col_name} {col_def}'))
+                    conn.commit()
+                print(f'[IUT] office.{col_name} column added ✅')
+
+        # Backfill slug for any office rows where it's missing (NULL/empty),
+        # generating a unique slug from the office name.
+        with db.engine.connect() as conn:
+            rows = conn.execute(text('SELECT id, name, slug FROM office')).fetchall()
+            used_slugs = {row.slug for row in rows if row.slug}
+            for row in rows:
+                if not row.slug:
+                    base = ''.join(ch if ch.isalnum() else '-' for ch in (row.name or 'office').strip().lower())
+                    while '--' in base:
+                        base = base.replace('--', '-')
+                    base = base.strip('-') or 'office'
+                    new_slug, n = base, 1
+                    while new_slug in used_slugs:
+                        n += 1
+                        new_slug = f'{base}-{n}'
+                    used_slugs.add(new_slug)
+                    conn.execute(text('UPDATE office SET slug = :slug WHERE id = :id'), {'slug': new_slug, 'id': row.id})
+            conn.commit()
+        print('[IUT] office.slug backfilled where missing ✅')
+
+        officer_cols6 = {c['name'] for c in sa_inspect6(db.engine).get_columns('officer')}
+        if 'office_id' not in officer_cols6:
+            with db.engine.connect() as conn:
+                conn.execute(text('ALTER TABLE officer ADD COLUMN office_id INTEGER'))
+                conn.commit()
+            print('[IUT] officer.office_id column added ✅')
+        else:
+            print('[IUT] officer.office_id already exists — skipping.')
+
+        # One-time seed: create a default "Office of the Registrar" and try to
+        # backfill any existing officer that doesn't have an office yet, based
+        # on simple keyword matching against their designation/room. This never
+        # overwrites an office_id that's already set.
+        if Office.query.count() == 0:
+            seed_offices = [
+                Office(name='Office of the Vice Chancellor',     slug='vc-office',     sort_order=1),
+                Office(name='Office of the Pro Vice Chancellor', slug='pro-vc-office', sort_order=2),
+                Office(name='Office of the Registrar',           slug='registrar-office', sort_order=3),
+            ]
+            db.session.add_all(seed_offices)
             db.session.commit()
-            for (s, e) in date_ranges:
-                total_cancelled += len(_cancel_affected_appointments(officer, s, e, note))
+            print('[IUT] Seeded default offices ✅')
 
-        log_action('bulk_unavailability_added',
-            f"{len(selected_officers)} officer(s) marked unavailable "
-            f"{form.start_date.data}–{form.end_date.data} ({form.mode.data}): {form.reason.data}")
-        db.session.commit()
-        flash(f'Applied unavailability across {len(selected_officers)} officer(s), '
-              f'{total_periods} period(s) created, {total_cancelled} appointment(s) cancelled.', 'success')
-        return redirect(url_for('admin.bulk_unavailability'))
+            vc_off  = Office.query.filter_by(slug='vc-office').first()
+            pvc_off = Office.query.filter_by(slug='pro-vc-office').first()
+            reg_off = Office.query.filter_by(slug='registrar-office').first()
 
-    return render_template('admin/bulk_unavailability.html', form=form, officers=officers)
+            from models import Officer as _Officer
+            for off in _Officer.query.filter_by(office_id=None).all():
+                text_blob = f"{off.designation} {off.room or ''}".lower()
+                if 'pro vice chancellor' in text_blob or 'pro vc' in text_blob:
+                    off.office_id = pvc_off.id
+                elif 'vice chancellor' in text_blob or 'vc' in text_blob:
+                    off.office_id = vc_off.id
+                elif 'registrar' in text_blob:
+                    off.office_id = reg_off.id
+            db.session.commit()
+            print('[IUT] Backfilled existing officers into default offices ✅')
+
+    except Exception as _office_err:
+        print(f'[IUT] office migration error (non-fatal): {_office_err}')
+
+    # ── Referred Exam Registration: table + officer flag self-heal ─────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect7
+        from models import Officer as _Officer7, ReferredExamRegistration as _RER7
+
+        inspector7  = sa_inspect7(db.engine)
+        all_tables7 = inspector7.get_table_names()
+
+        if 'referred_exam_registration' not in all_tables7:
+            db.create_all()
+            print('[IUT] referred_exam_registration table created ✅')
+
+        officer_cols7 = {c['name'] for c in sa_inspect7(db.engine).get_columns('officer')}
+        if 'handles_referred_exam' not in officer_cols7:
+            with db.engine.connect() as conn:
+                conn.execute(text('ALTER TABLE officer ADD COLUMN handles_referred_exam BOOLEAN DEFAULT FALSE'))
+                conn.commit()
+            print('[IUT] officer.handles_referred_exam column added ✅')
+        else:
+            print('[IUT] officer.handles_referred_exam already exists — skipping.')
+
+        # One-time auto-detect: if no officer is flagged yet, try to match
+        # "Md. Enamul Hoque" by name so the feature works out of the box.
+        # This never overwrites a flag an admin has already set.
+        if not _Officer7.query.filter_by(handles_referred_exam=True).first():
+            candidate = _Officer7.query.filter(
+                _Officer7.name.ilike('%enamul hoque%')
+            ).first()
+            if candidate:
+                candidate.handles_referred_exam = True
+                db.session.commit()
+                print(f'[IUT] Auto-flagged "{candidate.name}" as the referred exam officer ✅')
+
+    except Exception as _rer_err:
+        print(f'[IUT] referred exam migration error (non-fatal): {_rer_err}')
+
+    # ── Flag any super_admin still on the published default password ──────────
+    try:
+        from flask_bcrypt import Bcrypt as _MCPBcrypt
+        _mcp_b = _MCPBcrypt()
+        still_on_default = [
+            u for u in User.query.filter_by(role='super_admin').all()
+            if not u.must_change_password
+            and _mcp_b.check_password_hash(u.password, 'SuperAdmin@2026!')
+        ]
+        for u in still_on_default:
+            u.must_change_password = True
+        if still_on_default:
+            db.session.commit()
+            print(f'[IUT] Flagged {len(still_on_default)} super_admin(s) still on the '
+                  f'default password for a forced change ✅')
+    except Exception as _mcp_flag_err:
+        print(f'[IUT] default-password flagging error (non-fatal): {_mcp_flag_err}')
+
+    # ── Performance indexes on existing tables ──────────────────────────────────
+    # create_all() only creates indexes for brand-new tables — these tables
+    # already existed, so we add the indexes explicitly. IF NOT EXISTS makes
+    # this safe to run on every boot.
+    try:
+        from sqlalchemy import text
+        index_statements = [
+            'CREATE INDEX IF NOT EXISTS ix_appointment_date ON appointment (date)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_officer_id ON appointment (officer_id)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_status ON appointment (status)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_user_id ON appointment (user_id)',
+            'CREATE INDEX IF NOT EXISTS ix_officer_office_id ON officer (office_id)',
+        ]
+        with db.engine.connect() as conn:
+            for stmt in index_statements:
+                conn.execute(text(stmt))
+            conn.commit()
+        print('[IUT] Performance indexes verified/created ✅')
+    except Exception as _index_err:
+        print(f'[IUT] index migration error (non-fatal): {_index_err}')
 
 
-@admin_bp.route('/admin/unavailability/delete/<int:period_id>')
-@login_required
-@admin_required
-def delete_unavailability(period_id):
-    period = db.session.get(OfficerUnavailability, period_id)
-    if not period:
-        flash('Unavailability record not found.', 'danger')
-        return redirect(url_for('admin.manage_officers'))
-    oid = period.officer_id
-    db.session.delete(period)
-    db.session.commit()
-    flash('Unavailability removed.', 'success')
-    return redirect(url_for('admin.manage_unavailability', officer_id=oid))
-
-# ── Send reminders ────────────────────────────────────────────────────────────
-
-def _send_tomorrows_reminders():
-    """Core reminder logic, shared by the manual admin button and the
-    cron-triggered endpoint below, so both stay in sync automatically."""
-    from utils import send_email, reminder_email
-    tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
-    apts     = Appointment.query.filter_by(date=tomorrow, status='Approved', reminder_sent=False).all()
-    sent     = 0
-    for apt in apts:
-        student = db.session.get(User, apt.user_id)
-        send_email("Appointment Reminder — Tomorrow — IUT", [student.email], reminder_email(apt, student))
-        db.session.add(Notification(user_id=apt.user_id,
-            message=f"Reminder: Your appointment with {apt.officer.name} is tomorrow at {apt.time}."))
-        apt.reminder_sent = True
-        sent += 1
-    db.session.commit()
-    return sent
+# ── Nav context (lets layout.html show officer-specific links) ───────────────
+@app.context_processor
+def inject_nav_context():
+    nav_officer_record = None
+    if current_user.is_authenticated and current_user.role == 'officer':
+        from models import Officer
+        nav_officer_record = Officer.query.filter_by(email=current_user.email).first()
+    return dict(nav_officer_record=nav_officer_record)
 
 
-@admin_bp.route('/admin/send-reminders')
-@login_required
-@admin_required
-def send_reminders():
-    sent = _send_tomorrows_reminders()
-    flash(f'Reminders sent to {sent} student(s).', 'success')
-    return redirect(url_for('admin.dashboard'))
+# ── Force password change ─────────────────────────────────────────────────────
+@app.before_request
+def enforce_password_change():
+    if current_user.is_authenticated and getattr(current_user, 'must_change_password', False):
+        allowed = {'auth.force_change_password', 'auth.logout', 'static'}
+        if flask_request.endpoint not in allowed:
+            return redirect(url_for('auth.force_change_password'))
 
 
-@admin_bp.route('/admin/cron/send-reminders', methods=['POST'])
-def cron_send_reminders():
-    """Triggered automatically once a day by a GitHub Actions scheduled workflow
-    (see .github/workflows/daily-reminders.yml), since Render's free tier has no
-    built-in cron and an in-process scheduler would be unreliable on a service
-    that spins down when idle. Protected by a shared secret instead of a login,
-    since this is called machine-to-machine with no user session."""
-    expected = os.environ.get('CRON_SECRET')
-    provided = request.headers.get('X-Cron-Secret', '')
-    if not expected:
-        return jsonify({'error': 'CRON_SECRET not configured on server'}), 503
-    if not provided or not secrets.compare_digest(provided, expected):
-        return jsonify({'error': 'unauthorized'}), 401
-    sent = _send_tomorrows_reminders()
-    return jsonify({'reminders_sent': sent}), 200
+# ── Session timeout ───────────────────────────────────────────────────────────
+@app.before_request
+def check_session_timeout():
+    if current_user.is_authenticated:
+        last = session.get('last_activity')
+        now  = datetime.now(timezone.utc).timestamp()
+        if last and (now - last) > 30 * 60:
+            logout_user()
+            session.clear()
+            from flask import flash
+            flash('Session expired due to inactivity.', 'warning')
+            return redirect(url_for('auth.login'))
+        session['last_activity'] = now
+        session.permanent = True
 
 
+# ── Time slot generator ───────────────────────────────────────────────────────
+def generate_time_slots(start_str="08:00", end_str="17:00"):
+    slots, fmt = [], "%H:%M"
+    current    = datetime.strptime(start_str, fmt)
+    end        = datetime.strptime(end_str,   fmt)
+    while current < end:
+        nxt = current + timedelta(hours=1)
+        slots.append(f"{current.strftime('%I:%M %p')} - {nxt.strftime('%I:%M %p')}")
+        current = nxt
+    return slots
 
-# ── Audit log ─────────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/audit')
-@login_required
-@admin_required
-def audit_log():
-    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
-    return render_template('admin/audit_log.html', logs=logs)
 
-# ── Export CSV ────────────────────────────────────────────────────────────────
-@admin_bp.route('/admin/export/csv')
-@login_required
-@admin_required
-def export_csv():
-    from utils import csv_safe
-
-    officer_filter = request.args.get('officer', '')
-    status_filter  = request.args.get('status', '')
-    start_date_str = request.args.get('start_date', '')
-    end_date_str   = request.args.get('end_date', '')
-    search         = request.args.get('search', '').strip()
-
-    from sqlalchemy.orm import contains_eager
-    query = Appointment.query.join(Officer).options(contains_eager(Appointment.officer))
-    if officer_filter:
+# ── QR code generator ─────────────────────────────────────────────────────────
+def generate_qr_data(appointment_id, token):
+    import io, base64
+    data = f"APT-{appointment_id}-{token}"
+    try:
+        import qrcode
+        qr = qrcode.QRCode(version=1, box_size=8, border=2)
+        qr.add_data(data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        b64 = base64.b64encode(buf.getvalue()).decode()
+    except ImportError:
         try:
-            query = query.filter(Officer.id == int(officer_filter))
-        except ValueError:
-            pass
-    if status_filter:
-        query = query.filter(Appointment.status == status_filter)
-    if search:
-        query = query.join(User, Appointment.user_id == User.id).filter(
-            db.or_(
-                Appointment.student_name.ilike(f'%{search}%'),
-                Appointment.student_id_num.ilike(f'%{search}%'),
-                User.email.ilike(f'%{search}%'),
-            )
-        )
-
-    start_date = end_date = None
-    if start_date_str:
-        try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            query = query.filter(Appointment.date >= start_date)
-        except ValueError:
-            pass
-    if end_date_str:
-        try:
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            query = query.filter(Appointment.date <= end_date)
-        except ValueError:
-            pass
-
-    appointments = query.order_by(Appointment.date.desc(), Appointment.time.desc()).all()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['ID', 'Student Name', 'Student ID', 'Department', 'Officer',
-                     'Date', 'Time', 'Status', 'Rejection Note'])
-    for apt in appointments:
-        writer.writerow([
-            apt.id,
-            csv_safe(apt.student_name),
-            csv_safe(apt.student_id_num),
-            csv_safe(apt.department),
-            csv_safe(apt.officer.name),
-            apt.date,
-            csv_safe(apt.time),
-            csv_safe(apt.status),
-            csv_safe(apt.rejection_note or ''),
-        ])
-    output.seek(0)
-
-    # Filename reflects what's actually in the file, so old exports don't get
-    # confused for the full dataset.
-    if start_date or end_date:
-        range_label = f"{start_date or 'start'}_to_{end_date or 'now'}"
-    else:
-        range_label = 'all'
-    filename = f"appointments_export_{range_label}.csv"
-
-    log_action('csv_export', f"Exported {len(appointments)} appointment(s) "
-               f"(officer={officer_filter or 'all'}, status={status_filter or 'all'}, "
-               f"range={start_date_str or '…'}–{end_date_str or '…'})")
-    db.session.commit()
-
-    return Response(output, mimetype="text/csv",
-                    headers={"Content-disposition": f"attachment; filename={filename}"})
-
-# ── Profile ───────────────────────────────────────────────────────────────────
-from forms import ProfileForm
-from flask_bcrypt import Bcrypt as _Bcrypt
-_bcrypt = _Bcrypt()
-
-@admin_bp.route('/admin/profile', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def profile():
-    form = ProfileForm()
-    if form.validate_on_submit():
-        if form.email.data != current_user.email:
-            if User.query.filter_by(email=form.email.data).first():
-                flash('Email already in use.', 'danger')
-                return render_template('profile.html', form=form)
-        current_user.name  = form.name.data
-        current_user.email = form.email.data
-        if form.new_password.data:
-            if not _bcrypt.check_password_hash(current_user.password, form.current_password.data):
-                flash('Current password incorrect.', 'danger')
-                return render_template('profile.html', form=form)
-            current_user.password = _bcrypt.generate_password_hash(form.new_password.data).decode('utf-8')
-        db.session.commit()
-        flash('Profile updated!', 'success')
-        return redirect(url_for('admin.profile'))
-    elif request.method == 'GET':
-        form.name.data  = current_user.name
-        form.email.data = current_user.email
-    return render_template('profile.html', form=form)
-
-# ── Global Holidays ───────────────────────────────────────────────────────────
-@admin_bp.route('/admin/holidays', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def manage_holidays():
-    if request.method == 'POST':
-        title     = request.form.get('title', '').strip()
-        start_str = request.form.get('start_date', '').strip()
-        end_str   = request.form.get('end_date', '').strip()
-        reason    = request.form.get('reason', '').strip()
-
-        if not title or not start_str or not end_str:
-            flash('All fields are required.', 'danger')
-            return redirect(url_for('admin.manage_holidays'))
-
-        try:
-            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-            end_date   = datetime.strptime(end_str,   '%Y-%m-%d').date()
-        except ValueError:
-            flash('Invalid date format.', 'danger')
-            return redirect(url_for('admin.manage_holidays'))
-
-        if end_date < start_date:
-            flash('End date cannot be before start date.', 'danger')
-            return redirect(url_for('admin.manage_holidays'))
-
-        holiday = GlobalHoliday(title=title, start_date=start_date, end_date=end_date, reason=reason or None)
-        db.session.add(holiday)
-
-        affected = Appointment.query.filter(
-            Appointment.date >= start_date,
-            Appointment.date <= end_date,
-            Appointment.status.in_(['Pending', 'Approved'])
-        ).all()
-
-        from utils import send_email
-        for apt in affected:
-            apt.status         = 'Rejected'
-            apt.rejection_note = f'University Holiday: {title}'
-            db.session.add(Notification(
-                user_id=apt.user_id,
-                message=f'Your appointment on {apt.date.strftime("%d %b %Y")} was cancelled due to a university holiday: {title}.'
-            ))
-            student = db.session.get(User, apt.user_id)
-            if student and student.email:
-                send_email(
-                    "Appointment Cancelled — University Holiday — IUT",
-                    [student.email],
-                    _holiday_cancellation_email(apt, student, title, start_date, end_date, reason)
-                )
-
-        log_action('holiday_added', f"Holiday '{title}' {start_date}–{end_date}. {len(affected)} appointment(s) cancelled.")
-        db.session.commit()
-        flash(f'Holiday added. {len(affected)} appointment(s) cancelled and students notified by email.', 'success')
-        return redirect(url_for('admin.manage_holidays'))
-
-    holidays = GlobalHoliday.query.order_by(GlobalHoliday.start_date).all()
-    today    = datetime.now(timezone.utc).date()
-    return render_template('admin/holidays.html', holidays=holidays, today=today)
+            from PIL import Image, ImageDraw
+            img  = Image.new('RGB', (200, 200), color='white')
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([10, 10, 190, 190], outline='black', width=3)
+            draw.text((20, 90), data[:20], fill='black')
+            buf  = io.BytesIO()
+            img.save(buf, format='PNG')
+            b64  = base64.b64encode(buf.getvalue()).decode()
+        except ImportError:
+            b64 = ""
+    return data, b64
 
 
-@admin_bp.route('/admin/holidays/delete/<int:holiday_id>')
-@login_required
-@admin_required
-def delete_holiday(holiday_id):
-    holiday = db.session.get(GlobalHoliday, holiday_id)
-    if not holiday:
-        flash('Holiday not found.', 'danger')
-        return redirect(url_for('admin.manage_holidays'))
-    log_action('holiday_deleted', f"Deleted holiday '{holiday.title}' {holiday.start_date}–{holiday.end_date}")
-    db.session.delete(holiday)
-    db.session.commit()
-    flash('Holiday removed.', 'success')
-    return redirect(url_for('admin.manage_holidays'))
+# ── Socket.IO events ──────────────────────────────────────────────────────────
+@socketio.on('join')
+def on_join(data):
+    room = str(data.get('user_id', ''))
+    if room:
+        join_room(room)
+
+def push_status_update(user_id, appointment_id, status, message):
+    socketio.emit('appointment_update', {
+        'appointment_id': appointment_id,
+        'status':         status,
+        'message':        message,
+        'timestamp':      datetime.now(timezone.utc).isoformat(),
+    }, room=str(user_id))
 
 
-# ── Feedback ──────────────────────────────────────────────────────────────────
+# ── Error handlers ────────────────────────────────────────────────────────────
+@app.errorhandler(404)
+def not_found(e):    return render_template('errors/404.html'), 404
 
-@admin_bp.route('/admin/feedback')
-@login_required
-@admin_required
-def view_feedback():
-    from models import Feedback
-    from sqlalchemy import func
+@app.errorhandler(500)
+def server_error(e): return render_template('errors/500.html'), 500
 
-    officer_filter = request.args.get('officer_id', type=int)
+@app.errorhandler(403)
+def forbidden(e):    return render_template('errors/403.html'), 403
 
-    query = Feedback.query.order_by(Feedback.created_at.desc())
-    if officer_filter:
-        query = query.filter_by(officer_id=officer_filter)
+@app.errorhandler(429)
+def rate_limited(e): return render_template('errors/429.html'), 429
 
-    # Compute average/count over the FULL filtered set via SQL aggregate,
-    # not just the current page, so these numbers don't shift as you page through.
-    agg_query = db.session.query(func.avg(Feedback.rating), func.count(Feedback.id))
-    if officer_filter:
-        agg_query = agg_query.filter(Feedback.officer_id == officer_filter)
-    overall_avg, total_count = agg_query.one()
-
-    entries_page = db.paginate(query, page=request.args.get('page', 1, type=int),
-                               per_page=25, error_out=False)
-    entries = entries_page.items
-
-    # Per-officer average rating + count, for the summary cards at the top.
-    summary_rows = (
-        db.session.query(
-            Officer.id, Officer.name,
-            func.avg(Feedback.rating).label('avg_rating'),
-            func.count(Feedback.id).label('count')
-        )
-        .join(Feedback, Feedback.officer_id == Officer.id)
-        .group_by(Officer.id, Officer.name)
-        .order_by(func.avg(Feedback.rating).desc())
-        .all()
-    )
-
-    all_officers = Officer.query.order_by(Officer.name).all()
-
-    base_args = {'officer_id': officer_filter} if officer_filter else {}
-    return render_template('admin/feedback.html', entries=entries, summary_rows=summary_rows,
-                           all_officers=all_officers, officer_filter=officer_filter,
-                           overall_avg=overall_avg, total_count=total_count,
-                           pagination=entries_page, base_args=base_args)
+@app.errorhandler(413)
+def too_large(e):    return render_template('errors/413.html'), 413
 
 
-def _holiday_cancellation_email(apt, student, title, start_date, end_date, reason):
-    duration    = (end_date - start_date).days + 1
-    reason_line = f"<p><strong>Reason:</strong> {reason}</p>" if reason else ""
-    return f"""
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;">
-      <div style="text-align:center;margin-bottom:24px;">
-        <h2 style="color:#d97706;margin:0;">🏖️ University Holiday Notice</h2>
-        <p style="color:#6b7280;margin-top:4px;">Islamic University of Technology</p>
-      </div>
-      <p>Dear <strong>{student.name}</strong>,</p>
-      <p>We regret to inform you that your appointment has been <strong>cancelled</strong> due to an upcoming university holiday.</p>
-      <div style="background:#fef3c7;border-left:4px solid #d97706;padding:16px;border-radius:4px;margin:20px 0;">
-        <h3 style="margin:0 0 8px 0;color:#92400e;">🗓️ Holiday: {title}</h3>
-        <p style="margin:4px 0;color:#78350f;">
-          <strong>Period:</strong> {start_date.strftime('%d %b %Y')} – {end_date.strftime('%d %b %Y')}
-          ({duration} day{'s' if duration > 1 else ''})
-        </p>
-        {reason_line}
-      </div>
-      <div style="background:#f9fafb;padding:16px;border-radius:4px;margin:20px 0;">
-        <h4 style="margin:0 0 8px 0;color:#374151;">Your Cancelled Appointment</h4>
-        <p style="margin:4px 0;"><strong>Officer:</strong> {apt.officer.name}</p>
-        <p style="margin:4px 0;"><strong>Date:</strong> {apt.date.strftime('%d %b %Y')}</p>
-        <p style="margin:4px 0;"><strong>Time:</strong> {apt.time}</p>
-      </div>
-      <p>You are welcome to <strong>book a new appointment</strong> once the holiday period ends.</p>
-      <div style="text-align:center;margin:28px 0;">
-        <a href="https://iut-app.onrender.com/student/book-calcom"
-           style="background:#d97706;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;">
-          Book New Appointment
-        </a>
-      </div>
-      <p style="color:#6b7280;font-size:13px;border-top:1px solid #e5e7eb;padding-top:16px;margin-top:24px;">
-        This is an automated message from the IUT Appointment System. Please do not reply to this email.
-      </p>
-    </div>
-    """
+# ── Blueprints ────────────────────────────────────────────────────────────────
+from routes.auth        import auth_bp
+from routes.student     import student_bp
+from routes.admin       import admin_bp
+from routes.officer     import officer_bp
+from routes.super_admin import super_admin_bp
+from routes.visa        import visa_bp
+from routes.referred_exam import referred_exam_bp
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(student_bp)
+app.register_blueprint(admin_bp)
+app.register_blueprint(officer_bp)
+app.register_blueprint(super_admin_bp)
+app.register_blueprint(visa_bp)
+app.register_blueprint(referred_exam_bp)
+
+limiter.limit("10 per minute")(auth_bp)
+
+# The cron-triggered reminders endpoint is called machine-to-machine (GitHub
+# Actions) with no browser session, so it can't carry a CSRF token — it's
+# authenticated via a shared secret header instead (see routes/admin.py).
+from routes.admin import cron_send_reminders as _cron_send_reminders_view
+csrf.exempt(_cron_send_reminders_view)
+
+
+# ── Root route ────────────────────────────────────────────────────────────────
+@app.route('/')
+def index():
+    if current_user.is_authenticated:
+        role = current_user.role
+        if role == 'super_admin':  return redirect(url_for('super_admin.dashboard'))
+        if role == 'admin':        return redirect(url_for('admin.dashboard'))
+        if role == 'officer':
+            from models import Officer
+            _off = Officer.query.filter_by(email=current_user.email).first()
+            if _off and _off.handles_referred_exam:
+                return redirect(url_for('referred_exam.officer_dashboard'))
+            return redirect(url_for('officer.dashboard'))
+        if role == 'visa_officer': return redirect(url_for('visa.visa_officer_dashboard'))
+        return redirect(url_for('student.dashboard'))
+    return render_template('home.html')
+
+
+# ── Live notifications API ────────────────────────────────────────────────────
+@app.route('/api/notifications/unread-count')
+def unread_count():
+    from models import Notification
+    if not current_user.is_authenticated:
+        return {'count': 0}
+    try:
+        count = Notification.query.filter_by(
+            user_id=current_user.id, is_read=False
+        ).count()
+        return {'count': count}
+    except Exception:
+        db.session.rollback()
+        return {'count': 0}
+
+
+if __name__ == '__main__':
+    port  = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)
