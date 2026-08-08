@@ -19,6 +19,7 @@ class User(db.Model, UserMixin):
     student_id_num  = db.Column(db.String(50), nullable=True)
     department      = db.Column(db.String(100), nullable=True)
     dark_mode       = db.Column(db.Boolean, default=False)
+    profile_picture_url = db.Column(db.String(500), nullable=True)
     is_active       = db.Column(db.Boolean, default=True)
     email_verified      = db.Column(db.Boolean, default=False)
     email_verify_token  = db.Column(db.String(64), nullable=True)
