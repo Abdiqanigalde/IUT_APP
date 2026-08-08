@@ -5,8 +5,9 @@ from forms import AppointmentForm, ProfileForm, RescheduleForm
 from datetime import datetime, timedelta, timezone
 from flask_bcrypt import Bcrypt
 from services.appointment_service import AppointmentService
-from sqlalchemy import case
-import io, csv
+import io, csv, logging
+
+logger = logging.getLogger('iut.student')
 
 student_bp = Blueprint('student', __name__)
 bcrypt = Bcrypt()
@@ -193,7 +194,25 @@ def cancel_appointment(appointment_id):
     apt.status = 'Cancelled'
     db.session.flush()
     _promote_waitlist(apt.officer_id, apt.date, apt.time)
+
+    # Let the officer know — previously this only removed the appointment
+    # from their pending list with no notification, so they'd have no idea
+    # a student cancelled unless they happened to notice the count change.
+    officer_user = User.query.filter_by(email=apt.officer.email).first()
+    if officer_user:
+        msg = (f"{apt.student_name} cancelled their appointment with you on "
+               f"{apt.date.strftime('%d %b %Y')} at {apt.time}.")
+        db.session.add(Notification(user_id=officer_user.id, message=msg))
+
     db.session.commit()
+
+    if officer_user:
+        from utils import send_email
+        html = (f"<p><strong>{apt.student_name}</strong> has cancelled their appointment "
+                f"with you scheduled for <strong>{apt.date.strftime('%d %b %Y')}</strong> "
+                f"at <strong>{apt.time}</strong>.</p>")
+        send_email('Appointment Cancelled — IUT', [officer_user.email], html)
+
     flash('Appointment cancelled.', 'success')
     return redirect(url_for('student.dashboard'))
 
@@ -343,7 +362,23 @@ def reschedule_appointment(appointment_id):
 
         _promote_waitlist(old_officer_id, old_date, old_time)
 
+        # Notify the officer — the appointment just went back to Pending and
+        # needs their re-approval, but nothing previously told them that.
+        officer_user = User.query.filter_by(email=officer.email).first()
+        if officer_user:
+            msg = (f"{apt.student_name} rescheduled their appointment with you to "
+                   f"{new_date.strftime('%d %b %Y')} at {new_time}. It needs your approval again.")
+            db.session.add(Notification(user_id=officer_user.id, message=msg))
+
         db.session.commit()
+
+        if officer_user:
+            from utils import send_email
+            html = (f"<p><strong>{apt.student_name}</strong> has rescheduled their appointment "
+                    f"with you to <strong>{new_date.strftime('%d %b %Y')}</strong> at "
+                    f"<strong>{new_time}</strong>. Please review and approve it again.</p>")
+            send_email('Appointment Rescheduled — Needs Your Approval — IUT', [officer_user.email], html)
+
         flash('Appointment rescheduled successfully!', 'success')
         return redirect(url_for('student.dashboard'))
 
@@ -596,7 +631,7 @@ def _promote_waitlist(officer_id, slot_date, slot_time):
             )
         except Exception as mail_err:
             # Log but don't crash — appointment is already saved
-            print(f'[IUT] Waitlist promotion email failed for user {user.id}: {mail_err}')
+            logger.warning('Waitlist promotion email failed for user %s: %s', user.id, mail_err, exc_info=True)
 
         return  # Only promote one person per slot opening
 
@@ -811,6 +846,19 @@ def profile():
         current_user.email          = form.email.data
         current_user.student_id_num = form.student_id_num.data
         current_user.department     = form.department.data
+
+        if form.remove_profile_picture.data:
+            current_user.profile_picture_url = None
+        elif form.profile_picture.data and getattr(form.profile_picture.data, 'filename', ''):
+            from routes.visa import upload_to_cloudinary
+            uploaded_url = upload_to_cloudinary(
+                form.profile_picture.data, 'profile_pictures', f'user_{current_user.id}'
+            )
+            if uploaded_url:
+                current_user.profile_picture_url = uploaded_url
+            else:
+                flash('Photo upload failed — check the file type (jpg/jpeg/png/webp). Other changes were still saved.', 'warning')
+
         if form.new_password.data:
             if not form.current_password.data or \
                not bcrypt.check_password_hash(current_user.password, form.current_password.data):
@@ -873,13 +921,9 @@ def officer_list():
         # "office=none" means the "Unassigned / General" bucket from the offices page
         query = query.filter_by(office_id=None)
 
-    # The Registrar (head of the Office of the Registrar) always leads the
-    # list for their office; everyone else falls back to alphabetical.
-    registrar_first = case((Officer.designation == 'Registrar', 0), else_=1)
-
-    officers = query.order_by(registrar_first, Officer.name).all() if office_id or 'office' in request.args else \
+    officers = query.order_by(Officer.name).all() if office_id or 'office' in request.args else \
         query.join(Office, Officer.office_id == Office.id, isouter=True) \
-             .order_by(Office.sort_order, registrar_first, Officer.name).all()
+             .order_by(Office.sort_order, Officer.name).all()
     today    = datetime.now(timezone.utc).date()
     return render_template('student/officers.html', officers=officers, today=today, office=office)
 
