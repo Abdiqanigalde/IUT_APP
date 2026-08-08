@@ -18,7 +18,7 @@ class User(db.Model, UserMixin):
     role            = db.Column(db.String(20), nullable=False, default='student')
     student_id_num  = db.Column(db.String(50), nullable=True)
     department      = db.Column(db.String(100), nullable=True)
-    dark_mode       = db.Column(db.Boolean, default=False)
+    dark_mode       = db.Column(db.Boolean, default=True)
     profile_picture_url = db.Column(db.String(500), nullable=True)
     is_active       = db.Column(db.Boolean, default=True)
     email_verified      = db.Column(db.Boolean, default=False)
@@ -342,3 +342,11 @@ class ReferredExamRegistration(db.Model):
 
     def course_count(self):
         return len(self.course_list())
+
+
+class AppSetting(db.Model):
+    """Tiny key/value store for one-off app-level flags (e.g. migration
+    markers) that shouldn't need a real Alembic migration."""
+    __tablename__ = 'app_setting'
+    key   = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.String(255), nullable=True)
