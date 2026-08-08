@@ -411,10 +411,33 @@ def delete_officer(officer_id):
 
     linked_user = User.query.filter_by(email=officer.email, role='officer').first()
     log_action('officer_deleted', f'Deleted {officer.name} — {len(appointments)} appointment(s) cancelled')
+
+    # Capture what we need for the emails now — after commit, `officer` is
+    # deleted and `apt` objects are expired, so reading their attributes
+    # then would raise ObjectDeletedError.
+    officer_name = officer.name
+    email_jobs = [
+        (db.session.get(User, apt.user_id), apt.date, apt.time)
+        for apt in appointments
+    ]
+
     db.session.delete(officer)
     if linked_user:
         db.session.delete(linked_user)
     db.session.commit()
+
+    # Every other cancellation path emails the student, not just an in-app
+    # notification — match that here so students who don't check the app
+    # regularly still find out before they show up for a removed officer.
+    from utils import send_email
+    for student, apt_date, apt_time in email_jobs:
+        if student and student.email:
+            html = (f"<p>Your appointment with <strong>{officer_name}</strong> on "
+                    f"<strong>{apt_date.strftime('%d %b %Y')}</strong> at "
+                    f"<strong>{apt_time}</strong> was cancelled because the officer "
+                    f"was removed from the system.</p>")
+            send_email('Appointment Cancelled — IUT', [student.email], html)
+
     flash(f'Officer removed successfully. {len(appointments)} appointment(s) cancelled.', 'success')
     return redirect(url_for('admin.manage_officers'))
 
