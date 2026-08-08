@@ -145,23 +145,46 @@ with app.app_context():
         from models import Officer as _DefOfficer
         _db_bcrypt = _DB()
 
-        # (name, email, password, role, officer_designation_or_None)
+        # (name, email, password, role, officer_designation_or_None, issues_handled_keywords_or_None)
         _default_accounts = [
-            ('System Admin',                              'admin@iut-dhaka.edu',        'Admin@IUT2026!',        'admin',        None),
-            ('Prof. Dr. Md Mamun Bin Ibne Reaz',           'vc@iut-dhaka.edu',           'VC@IUT2026!',           'officer',      'Vice Chancellor'),
-            ('Dr. Hissein Araby Nour',                     'provc@iut-dhaka.edu',        'PROVC@IUT2026!',        'officer',      'Pro Vice Chancellor'),
-            ('Visa Officer',                               'visaofficer@iut-dhaka.edu',  'visaofficer@2026!',     'visa_officer', None),
-            ('Student',                                    'abdinadiif@iut-dhaka.edu',   'Abdmar716',             'student',      None),
-            ('Dr. Mwebesa Umar',                           'registrar@iut-dhaka.edu',    'Registrar@IUT2026!',    'officer',      'Registrar'),
-            ('Engr. Noman Ahmed Khan',                     'nak@iut-dhaka.edu',          'DeputyReg@IUT2026!',    'officer',      'Deputy Registrar'),
-            ('Abdoul-Azize Alioum',                        'abdoulazize@iut-dhaka.edu',  'SrRegistrar@IUT2026!',  'officer',      'Sr. Assistant Registrar'),
-            ('Mr. Md. Mafizur Rahman',                     'mafiz@iut-dhaka.edu',        'Section@IUT2026!',      'officer',      'Section Officer'),
-            ('Mr. Md. Rafiqul Islam',                      'rafiqul@iut-dhaka.edu',      'AdminOfficer@IUT2026!', 'officer',      'Senior Assistant Administrative Officer'),
-            ('Mr. Md. Enamul Hoque',                       'enamul@iut-dhaka.edu',       'Office@IUT2026!',       'officer',      'Sr. Office Attendant'),
+            ('System Admin', 'admin@iut-dhaka.edu', 'Admin@IUT2026!', 'admin', None, None),
+            ('Prof. Dr. Md Mamun Bin Ibne Reaz', 'vc@iut-dhaka.edu', 'VC@IUT2026!', 'officer',
+             'Vice Chancellor',
+             'policy matter, scholarship approval, research collaboration, convocation, '
+             'formal complaint, disciplinary appeal, MOU, university policy, honorary meeting'),
+            ('Dr. Hissein Araby Nour', 'provc@iut-dhaka.edu', 'PROVC@IUT2026!', 'officer',
+             'Pro Vice Chancellor',
+             'academic affairs, curriculum, examination policy, faculty recruitment, '
+             'academic appeal, research funding, department coordination, academic policy'),
+            ('Visa Officer', 'visaofficer@iut-dhaka.edu', 'visaofficer@2026!', 'visa_officer', None, None),
+            ('Student', 'abdinadiif@iut-dhaka.edu', 'Abdmar716', 'student', None, None),
+            ('Dr. Mwebesa Umar', 'registrar@iut-dhaka.edu', 'Registrar@IUT2026!', 'officer',
+             'Registrar',
+             'transcript, degree certificate, provisional certificate, character certificate, '
+             'academic record, convocation registration, transfer certificate, enrollment verification'),
+            ('Engr. Noman Ahmed Khan', 'nak@iut-dhaka.edu', 'DeputyReg@IUT2026!', 'officer',
+             'Deputy Registrar',
+             'transcript, certificate, student records, enrollment certificate, academic transcript, '
+             'registration issue, degree verification'),
+            ('Abdoul-Azize Alioum', 'abdoulazize@iut-dhaka.edu', 'SrRegistrar@IUT2026!', 'officer',
+             'Sr. Assistant Registrar',
+             'admission, semester registration, course registration, student records, '
+             'enrollment, ID card, add drop course'),
+            ('Mr. Md. Mafizur Rahman', 'mafiz@iut-dhaka.edu', 'Section@IUT2026!', 'officer',
+             'Section Officer',
+             'leave application, office correspondence, form submission, document processing, '
+             'section paperwork, general inquiry'),
+            ('Mr. Md. Rafiqul Islam', 'rafiqul@iut-dhaka.edu', 'AdminOfficer@IUT2026!', 'officer',
+             'Senior Assistant Administrative Officer',
+             'administrative matter, office correspondence, staff records, general administration, '
+             'procurement, facility issue, hr matter'),
+            ('Mr. Md. Enamul Hoque', 'enamul@iut-dhaka.edu', 'Office@IUT2026!', 'officer',
+             'Sr. Office Attendant',
+             'document delivery, office support, general assistance, appointment support, errand'),
         ]
 
         _created_any = False
-        for _name, _email, _pw, _role, _designation in _default_accounts:
+        for _name, _email, _pw, _role, _designation, _handles in _default_accounts:
             if User.query.filter_by(email=_email).first():
                 continue  # already exists — never touch it
 
@@ -177,13 +200,16 @@ with app.app_context():
             db.session.add(_user)
 
             # Officer-role accounts need a matching Officer row (same email)
-            # so their dashboard can find their own appointments.
+            # so their dashboard can find their own appointments, and their
+            # "Issues Handled" keywords power the AI officer-recommendation
+            # feature (services/ai_suggestions.py).
             if _role == 'officer' and _designation:
                 if not _DefOfficer.query.filter_by(email=_email).first():
                     db.session.add(_DefOfficer(
                         name=_name,
                         designation=_designation,
                         email=_email,
+                        handles=_handles,
                     ))
 
             _created_any = True
