@@ -812,6 +812,19 @@ def profile():
         current_user.email          = form.email.data
         current_user.student_id_num = form.student_id_num.data
         current_user.department     = form.department.data
+
+        if form.remove_profile_picture.data:
+            current_user.profile_picture_url = None
+        elif form.profile_picture.data and getattr(form.profile_picture.data, 'filename', ''):
+            from routes.visa import upload_to_cloudinary
+            uploaded_url = upload_to_cloudinary(
+                form.profile_picture.data, 'profile_pictures', f'user_{current_user.id}'
+            )
+            if uploaded_url:
+                current_user.profile_picture_url = uploaded_url
+            else:
+                flash('Photo upload failed — check the file type (jpg/jpeg/png/webp). Other changes were still saved.', 'warning')
+
         if form.new_password.data:
             if not form.current_password.data or \
                not bcrypt.check_password_hash(current_user.password, form.current_password.data):
