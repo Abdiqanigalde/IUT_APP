@@ -245,6 +245,9 @@ with app.app_context():
                         designation=_designation,
                         email=_email,
                         handles=_handles,
+                        # Match the same Fri/Sat/Sun default used by the
+                        # Admin → Officers form, so weekends aren't bookable.
+                        recurring_off_days='4,5,6',
                     ))
 
             _created_any = True
@@ -253,21 +256,33 @@ with app.app_context():
         if _created_any:
             db.session.commit()
 
-        # ── Backfill: fill in "Issues Handled" for officers that already
-        # existed (e.g. created before this keyword list was added) but only
-        # if the field is still empty — never overwrites anything an admin
-        # has since set by hand. ──────────────────────────────────────────
-        _backfilled_any = False
-        for _name, _email, _pw, _role, _designation, _handles in _default_accounts:
-            if _role != 'officer' or not _handles:
-                continue
-            _off = _DefOfficer.query.filter_by(email=_email).first()
-            if _off and not (_off.handles or '').strip():
-                _off.handles = _handles
-                _backfilled_any = True
-                print(f'[IUT] Backfilled Issues Handled for {_email}')
-        if _backfilled_any:
+        # ── One-time backfill for officers that already existed before these
+        # keyword lists / off-days defaults were added. Gated on an
+        # AppSetting marker so it runs exactly once, ever — after that, an
+        # admin is free to blank out "Issues Handled" or set an officer to
+        # "no days off" on purpose and it will stick, even across restarts.
+        from models import AppSetting as _AppSetting2
+        _backfill_flag = 'default_officer_fields_backfill_v1'
+        if not _AppSetting2.query.get(_backfill_flag):
+            _backfilled_any = False
+            for _name, _email, _pw, _role, _designation, _handles in _default_accounts:
+                if _role != 'officer' or not _handles:
+                    continue
+                _off = _DefOfficer.query.filter_by(email=_email).first()
+                if _off and not (_off.handles or '').strip():
+                    _off.handles = _handles
+                    _backfilled_any = True
+                    print(f'[IUT] Backfilled Issues Handled for {_email}')
+                if _off and not (_off.recurring_off_days or '').strip():
+                    _off.recurring_off_days = '4,5,6'
+                    _backfilled_any = True
+                    print(f'[IUT] Backfilled Recurring Off Days (Fri/Sat/Sun) for {_email}')
+            db.session.add(_AppSetting2(key=_backfill_flag, value='done'))
             db.session.commit()
+            if _backfilled_any:
+                print('[IUT] One-time officer field backfill complete ✅')
+        else:
+            print('[IUT] Officer field backfill already applied — skipping.')
     except Exception as _default_acct_err:
         db.session.rollback()
         print(f'[IUT] Default account seeding error (non-fatal): {_default_acct_err}')
