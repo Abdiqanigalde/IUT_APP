@@ -135,6 +135,25 @@ with app.app_context():
     except Exception as _ppu_err:
         print(f'[IUT] profile_picture_url column migration error (non-fatal): {_ppu_err}')
 
+    # ── One-time: make dark mode the default look, matching the landing page ──
+    # New signups already default to dark_mode=True (see models.User). This
+    # backfills everyone who already existed before that default changed.
+    # Runs exactly once, ever — gated on an AppSetting marker — so it will
+    # never re-flip anyone's dark_mode after they've toggled it themselves.
+    try:
+        from models import AppSetting as _AppSetting
+        _flag_key = 'dark_mode_default_migration_v1'
+        if not _AppSetting.query.get(_flag_key):
+            _updated = User.query.update({User.dark_mode: True})
+            db.session.add(_AppSetting(key=_flag_key, value='done'))
+            db.session.commit()
+            print(f'[IUT] Dark mode set as default for {_updated} existing user(s) ✅')
+        else:
+            print('[IUT] Dark-mode-default migration already applied — skipping.')
+    except Exception as _dm_err:
+        db.session.rollback()
+        print(f'[IUT] Dark mode default migration error (non-fatal): {_dm_err}')
+
     # ── Auto-create super_admin if none exists ────────────────────────────────
     if not User.query.filter_by(role='super_admin').first():
         from flask_bcrypt import Bcrypt as _B
