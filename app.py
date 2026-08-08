@@ -136,91 +136,64 @@ with app.app_context():
         db.session.commit()
         print('[IUT] Default super_admin created: superadmin@iut-dhaka.edu / SuperAdmin@2026!')
 
-    # ── Auto-create the rest of the default IUT staff/demo accounts ───────────
-    # Same idea as the super_admin bootstrap above: create-if-missing, never
-    # touches an existing row, so it's safe to run on every startup (dev and
-    # production). Officer-role accounts also get a matching `Officer` row —
-    # the officer dashboard looks up Officer.email == current_user.email.
+    # ── Auto-create default demo/officer accounts if missing ──────────────────
+    # Idempotent: only ever INSERTs a row for an email that doesn't exist yet.
+    # Never updates or deletes an existing account, so anything an admin has
+    # since changed (password, name, active flag, etc.) is left alone.
     try:
-        from models import Officer as _Officer
+        from flask_bcrypt import Bcrypt as _DB
+        from models import Officer as _DefOfficer
+        _db_bcrypt = _DB()
 
+        # (name, email, password, role, officer_designation_or_None)
         _default_accounts = [
-            # Non-officer roles: just a User row.
-            dict(name='System Admin', email='admin@iut-dhaka.edu',
-                 password='Admin@IUT2026!', role='admin'),
-            dict(name='Visa Officer', email='visaofficer@iut-dhaka.edu',
-                 password='visaofficer@2026!', role='visa_officer'),
-            dict(name='Student', email='abdinadiif@iut-dhaka.edu',
-                 password='Abdmar716', role='student', must_change_password=False),
-
-            # Officer-role accounts: User row + matching Officer row.
-            dict(name='Prof. Dr. Md Mamun Bin Ibne Reaz', email='vc@iut-dhaka.edu',
-                 password='VC@IUT2026!', role='officer',
-                 designation='Vice Chancellor'),
-            dict(name='Dr. Hissein Araby Nour', email='provc@iut-dhaka.edu',
-                 password='PROVC@IUT2026!', role='officer',
-                 designation='Pro Vice Chancellor'),
-            dict(name='Dr. Mwebesa Umar', email='registrar@iut-dhaka.edu',
-                 password='Registrar@IUT2026!', role='officer',
-                 designation='Registrar'),
-            dict(name='Engr. Noman Ahmed Khan', email='nak@iut-dhaka.edu',
-                 password='DeputyReg@IUT2026!', role='officer',
-                 designation='Deputy Registrar'),
-            dict(name='Abdoul-Azize Alioum', email='abdoulazize@iut-dhaka.edu',
-                 password='SrRegistrar@IUT2026!', role='officer',
-                 designation='Sr. Assistant Registrar'),
-            dict(name='Mr. Md. Mafizur Rahman', email='mafiz@iut-dhaka.edu',
-                 password='Section@IUT2026!', role='officer',
-                 designation='Section Officer'),
-            dict(name='Mr. Md. Rafiqul Islam', email='rafiqul@iut-dhaka.edu',
-                 password='AdminOfficer@IUT2026!', role='officer',
-                 designation='Senior Assistant Administrative Officer'),
-            dict(name='Mr. Md. Enamul Hoque', email='enamul@iut-dhaka.edu',
-                 password='Office@IUT2026!', role='officer',
-                 designation='Sr. Office Attendant'),
+            ('System Admin',                              'admin@iut-dhaka.edu',        'Admin@IUT2026!',        'admin',        None),
+            ('Prof. Dr. Md Mamun Bin Ibne Reaz',           'vc@iut-dhaka.edu',           'VC@IUT2026!',           'officer',      'Vice Chancellor'),
+            ('Dr. Hissein Araby Nour',                     'provc@iut-dhaka.edu',        'PROVC@IUT2026!',        'officer',      'Pro Vice Chancellor'),
+            ('Visa Officer',                               'visaofficer@iut-dhaka.edu',  'visaofficer@2026!',     'visa_officer', None),
+            ('Student',                                    'abdinadiif@iut-dhaka.edu',   'Abdmar716',             'student',      None),
+            ('Dr. Mwebesa Umar',                           'registrar@iut-dhaka.edu',    'Registrar@IUT2026!',    'officer',      'Registrar'),
+            ('Engr. Noman Ahmed Khan',                     'nak@iut-dhaka.edu',          'DeputyReg@IUT2026!',    'officer',      'Deputy Registrar'),
+            ('Abdoul-Azize Alioum',                        'abdoulazize@iut-dhaka.edu',  'SrRegistrar@IUT2026!',  'officer',      'Sr. Assistant Registrar'),
+            ('Mr. Md. Mafizur Rahman',                     'mafiz@iut-dhaka.edu',        'Section@IUT2026!',      'officer',      'Section Officer'),
+            ('Mr. Md. Rafiqul Islam',                      'rafiqul@iut-dhaka.edu',      'AdminOfficer@IUT2026!', 'officer',      'Senior Assistant Administrative Officer'),
+            ('Mr. Md. Enamul Hoque',                       'enamul@iut-dhaka.edu',       'Office@IUT2026!',       'officer',      'Sr. Office Attendant'),
         ]
 
-        from flask_bcrypt import Bcrypt as _B2
-        _b2 = _B2()
-        _created_users, _created_officers = [], []
+        _created_any = False
+        for _name, _email, _pw, _role, _designation in _default_accounts:
+            if User.query.filter_by(email=_email).first():
+                continue  # already exists — never touch it
 
-        for acct in _default_accounts:
-            user = User.query.filter_by(email=acct['email']).first()
-            if not user:
-                privileged = acct['role'] != 'student'
-                user = User(
-                    name=acct['name'],
-                    email=acct['email'],
-                    password=_b2.generate_password_hash(acct['password']).decode('utf-8'),
-                    role=acct['role'],
-                    email_verified=True,
-                    is_active=True,
-                    must_change_password=acct.get('must_change_password', privileged),
-                )
-                db.session.add(user)
-                _created_users.append(acct['email'])
+            _user = User(
+                name=_name,
+                email=_email,
+                password=_db_bcrypt.generate_password_hash(_pw).decode('utf-8'),
+                role=_role,
+                email_verified=True,
+                is_active=True,
+                must_change_password=False,
+            )
+            db.session.add(_user)
 
-            if acct['role'] == 'officer':
-                officer = _Officer.query.filter_by(email=acct['email']).first()
-                if not officer:
-                    officer = _Officer(
-                        name=acct['name'],
-                        designation=acct['designation'],
-                        email=acct['email'],
-                        is_active=True,
-                    )
-                    db.session.add(officer)
-                    _created_officers.append(acct['email'])
+            # Officer-role accounts need a matching Officer row (same email)
+            # so their dashboard can find their own appointments.
+            if _role == 'officer' and _designation:
+                if not _DefOfficer.query.filter_by(email=_email).first():
+                    db.session.add(_DefOfficer(
+                        name=_name,
+                        designation=_designation,
+                        email=_email,
+                    ))
 
-        if _created_users or _created_officers:
+            _created_any = True
+            print(f'[IUT] Default account created: {_email} / {_pw}')
+
+        if _created_any:
             db.session.commit()
-        if _created_users:
-            print(f"[IUT] Default staff/demo accounts created: {', '.join(_created_users)}")
-        if _created_officers:
-            print(f"[IUT] Matching Officer records created: {', '.join(_created_officers)}")
-    except Exception as _default_accts_err:
+    except Exception as _default_acct_err:
         db.session.rollback()
-        print(f'[IUT] default accounts bootstrap error (non-fatal): {_default_accts_err}')
+        print(f'[IUT] Default account seeding error (non-fatal): {_default_acct_err}')
 
     # ── WaitlistEntry migration: appointment_id → slot-based ─────────────────
     try:
@@ -540,25 +513,6 @@ with app.app_context():
 
     except Exception as _office_err:
         print(f'[IUT] office migration error (non-fatal): {_office_err}')
-
-    # ── Waitlist: composite index self-heal ─────────────────────────────────────
-    # Speeds up the batched queue-position / waiter-count queries used on the
-    # student dashboard, /student/waitlist, and the booking calendar's slot API.
-    try:
-        from sqlalchemy import text as _wl_text, inspect as _wl_inspect
-        existing_indexes = {ix['name'] for ix in _wl_inspect(db.engine).get_indexes('waitlist_entry')}
-        if 'ix_waitlist_officer_slot' not in existing_indexes:
-            with db.engine.connect() as conn:
-                conn.execute(_wl_text(
-                    'CREATE INDEX IF NOT EXISTS ix_waitlist_officer_slot '
-                    'ON waitlist_entry (officer_id, slot_date, slot_time)'
-                ))
-                conn.commit()
-            print('[IUT] waitlist_entry composite index added ✅')
-        else:
-            print('[IUT] waitlist_entry composite index already exists — skipping.')
-    except Exception as _wl_err:
-        print(f'[IUT] waitlist index migration error (non-fatal): {_wl_err}')
 
     # ── Referred Exam Registration: table + officer flag self-heal ─────────────
     try:
