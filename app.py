@@ -119,6 +119,22 @@ with app.app_context():
     except Exception as _mcp_err:
         print(f'[IUT] must_change_password column migration error (non-fatal): {_mcp_err}')
 
+    # ── User.profile_picture_url: column self-heal ─────────────────────────────
+    try:
+        from sqlalchemy import text as _ppu_text, inspect as _ppu_inspect
+        _user_cols2 = {c['name'] for c in _ppu_inspect(db.engine).get_columns('user')}
+        if 'profile_picture_url' not in _user_cols2:
+            with db.engine.connect() as _ppu_conn:
+                _ppu_conn.execute(_ppu_text(
+                    'ALTER TABLE "user" ADD COLUMN profile_picture_url VARCHAR(500)'
+                ))
+                _ppu_conn.commit()
+            print('[IUT] user.profile_picture_url column added ✅')
+        else:
+            print('[IUT] user.profile_picture_url already exists — skipping.')
+    except Exception as _ppu_err:
+        print(f'[IUT] profile_picture_url column migration error (non-fatal): {_ppu_err}')
+
     # ── Auto-create super_admin if none exists ────────────────────────────────
     if not User.query.filter_by(role='super_admin').first():
         from flask_bcrypt import Bcrypt as _B
