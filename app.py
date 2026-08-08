@@ -217,6 +217,22 @@ with app.app_context():
 
         if _created_any:
             db.session.commit()
+
+        # ── Backfill: fill in "Issues Handled" for officers that already
+        # existed (e.g. created before this keyword list was added) but only
+        # if the field is still empty — never overwrites anything an admin
+        # has since set by hand. ──────────────────────────────────────────
+        _backfilled_any = False
+        for _name, _email, _pw, _role, _designation, _handles in _default_accounts:
+            if _role != 'officer' or not _handles:
+                continue
+            _off = _DefOfficer.query.filter_by(email=_email).first()
+            if _off and not (_off.handles or '').strip():
+                _off.handles = _handles
+                _backfilled_any = True
+                print(f'[IUT] Backfilled Issues Handled for {_email}')
+        if _backfilled_any:
+            db.session.commit()
     except Exception as _default_acct_err:
         db.session.rollback()
         print(f'[IUT] Default account seeding error (non-fatal): {_default_acct_err}')
