@@ -334,7 +334,7 @@ def manage_officers():
     ]
 
     if form.validate_on_submit():
-        if User.query.filter_by(email=form.login_email.data).first():
+        if User.query.filter(db.func.lower(User.email) == form.login_email.data).first():
             flash('Login email already in use. Choose a different one.', 'danger')
         else:
             off_days  = ','.join(form.recurring_off_days.data) if form.recurring_off_days.data else ''
@@ -850,7 +850,7 @@ def profile():
     form = ProfileForm()
     if form.validate_on_submit():
         if form.email.data != current_user.email:
-            if User.query.filter_by(email=form.email.data).first():
+            if User.query.filter(db.func.lower(User.email) == form.email.data).first():
                 flash('Email already in use.', 'danger')
                 return render_template('profile.html', form=form)
         current_user.name  = form.name.data
