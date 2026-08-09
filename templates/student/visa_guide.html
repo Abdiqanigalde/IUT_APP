@@ -47,32 +47,34 @@
     font-weight: 700; font-size: .9rem; flex-shrink: 0;
   }
   .step-header h5 { margin: 0; font-weight: 600; font-size: 1rem; }
-  .step-body { padding: 20px 24px; background: white; }
+  .step-body { padding: 20px 24px; background: var(--surface); color: var(--text); }
 
   .checklist-item {
     display: flex; align-items: flex-start; gap: 10px;
     padding: 10px 0;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--border);
     font-size: .93rem;
+    color: var(--text);
   }
   .checklist-item:last-child { border-bottom: none; }
   .checklist-item input[type=checkbox] {
     margin-top: 3px; width: 17px; height: 17px;
-    accent-color: #0d4f3c; flex-shrink: 0; cursor: pointer;
+    accent-color: var(--brand); flex-shrink: 0; cursor: pointer;
   }
   .checklist-item label { cursor: pointer; margin: 0; line-height: 1.5; }
-  .checklist-item.checked label { text-decoration: line-through; color: #aaa; }
+  .checklist-item.checked label { text-decoration: line-through; color: var(--text-muted); }
 
   .badge-tip {
     display: inline-block;
-    background: #e8f5e9; color: #0d4f3c;
-    border: 1px solid #c8e6c9;
+    background: rgba(30,122,76,.12); color: var(--brand);
+    border: 1px solid rgba(30,122,76,.3);
     border-radius: 20px; padding: 2px 10px;
     font-size: .75rem; font-weight: 600; margin-left: 8px;
   }
+  [data-bs-theme="dark"] .badge-tip { color: var(--brand-light); }
 
   .progress-bar-wrap {
-    background: #e9ecef; border-radius: 20px; height: 8px; margin-bottom: 4px;
+    background: var(--surface-2); border-radius: 20px; height: 8px; margin-bottom: 4px;
   }
   .progress-fill {
     height: 8px; border-radius: 20px;
@@ -95,25 +97,42 @@
     font-size: .88rem; color: #7c5e00;
   }
   .info-box i { color: #f59e0b; }
+  [data-bs-theme="dark"] .info-box {
+    background: rgba(245,158,11,.12); color: #fbbf24;
+  }
+  [data-bs-theme="dark"] .info-box i { color: #fbbf24; }
+
+  .info-box.info-blue { background: #e8f4fd; border-left-color: #2563eb; color: #1e40af; }
+  .info-box.info-blue i { color: #2563eb; }
+  [data-bs-theme="dark"] .info-box.info-blue {
+    background: rgba(37,99,235,.14); color: #93c5fd;
+  }
+  [data-bs-theme="dark"] .info-box.info-blue i { color: #93c5fd; }
 
   .fee-table th { background: #0d4f3c; color: white; }
   .fee-table td, .fee-table th { padding: 10px 14px; font-size: .9rem; }
+  .fee-table td { color: var(--text); border-color: var(--border); }
 
   .upload-section {
-    background: #f8fffe;
-    border: 2px dashed #b2dfdb;
+    background: var(--surface-2);
+    border: 2px dashed var(--border);
     border-radius: 12px;
     padding: 24px;
     margin-top: 20px;
   }
+  .upload-section.approved { border-color: #86efac; background: #f0fdf4; }
+  .upload-section.rejected { border-color: #fca5a5; background: #fff1f2; }
+  [data-bs-theme="dark"] .upload-section.approved { border-color: #16a34a; background: rgba(34,197,94,.1); }
+  [data-bs-theme="dark"] .upload-section.rejected { border-color: #dc2626; background: rgba(239,68,68,.1); }
   .upload-section h6 {
-    color: #0d4f3c;
+    color: var(--brand);
     font-weight: 700;
     margin-bottom: 16px;
     display: flex;
     align-items: center;
     gap: 8px;
   }
+  [data-bs-theme="dark"] .upload-section h6 { color: var(--brand-light); }
   .upload-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -125,24 +144,25 @@
     display: block;
     font-size: .82rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--text);
     margin-bottom: 5px;
   }
   .upload-field label .req { color: #ef4444; margin-left: 2px; }
   .upload-field input[type=file] {
     width: 100%;
     font-size: .82rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 7px 10px;
-    background: white;
+    background: var(--surface);
+    color: var(--text);
     cursor: pointer;
     transition: border-color .2s;
   }
-  .upload-field input[type=file]:hover { border-color: #0d4f3c; }
+  .upload-field input[type=file]:hover { border-color: var(--brand); }
   .upload-hint {
     font-size: .75rem;
-    color: #6b7280;
+    color: var(--text-muted);
     margin-top: 3px;
   }
 
@@ -167,11 +187,14 @@
   .status-banner.pending  { background: #fff8e1; border-left: 5px solid #f59e0b; }
   .status-banner.approved { background: #e8f5e9; border-left: 5px solid #22c55e; }
   .status-banner.rejected { background: #fef2f2; border-left: 5px solid #ef4444; }
+  [data-bs-theme="dark"] .status-banner.pending  { background: rgba(245,158,11,.12); }
+  [data-bs-theme="dark"] .status-banner.approved { background: rgba(34,197,94,.12); }
+  [data-bs-theme="dark"] .status-banner.rejected { background: rgba(239,68,68,.12); }
   .status-icon { font-size: 1.8rem; flex-shrink: 0; }
-  .status-banner .status-title { font-weight: 700; font-size: 1rem; margin-bottom: 2px; }
-  .status-banner .status-sub   { font-size: .85rem; color: #6b7280; margin: 0; }
+  .status-banner .status-title { font-weight: 700; font-size: 1rem; margin-bottom: 2px; color: var(--text); }
+  .status-banner .status-sub   { font-size: .85rem; color: var(--text-muted); margin: 0; }
   .status-banner .status-note  { font-size: .85rem; margin-top: 6px; padding: 8px 12px;
-                                  background: rgba(0,0,0,.05); border-radius: 6px; }
+                                  background: var(--surface-2); border-radius: 6px; color: var(--text); }
 
   .doc-submitted-list {
     margin-top: 16px;
@@ -183,14 +206,15 @@
 
   .doc-item {
     display: flex; align-items: center; gap: 8px;
-    background: white; border-radius: 8px;
+    background: var(--surface); border-radius: 8px;
     padding: 8px 12px; font-size: .82rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--border);
   }
   .doc-item .doc-icon { font-size: 1rem; }
-  .doc-item a { color: #0d4f3c; text-decoration: none; font-weight: 500; }
+  .doc-item a { color: var(--brand); text-decoration: none; font-weight: 500; }
+  [data-bs-theme="dark"] .doc-item a { color: var(--brand-light); }
   .doc-item a:hover { text-decoration: underline; }
-  .doc-item .missing { color: #9ca3af; font-style: italic; }
+  .doc-item .missing { color: var(--text-muted); font-style: italic; }
 </style>
 
 <!-- Hero -->
@@ -215,7 +239,7 @@
   <div class="status-banner approved">
     <div class="status-icon">✅</div>
     <div>
-      <div class="status-title" style="color:#15803d;">Application Approved!</div>
+      <div class="status-title" style="color:var(--success);">Application Approved!</div>
       <p class="status-sub">Congratulations! Your visa documents have been approved by the visa officer.</p>
       {% if application.officer_note %}
         <div class="status-note"><strong>Officer Note:</strong> {{ application.officer_note }}</div>
@@ -226,7 +250,7 @@
   <div class="status-banner rejected">
     <div class="status-icon">❌</div>
     <div>
-      <div class="status-title" style="color:#dc2626;">Application Rejected</div>
+      <div class="status-title" style="color:var(--danger);">Application Rejected</div>
       <p class="status-sub">Unfortunately your application was not approved. Please review the note below and resubmit.</p>
       {% if application.officer_note %}
         <div class="status-note"><strong>Reason:</strong> {{ application.officer_note }}</div>
@@ -315,8 +339,8 @@
         {% if not application or application.status == 'Rejected' %}
         <div class="upload-section mt-4">
           <h6><i class="fas fa-cloud-upload-alt"></i> Upload Your Visa Documents</h6>
-          <div class="info-box mb-3" style="background:#e8f4fd; border-color:#2563eb; color:#1e40af;">
-            <i class="fas fa-info-circle me-2" style="color:#2563eb;"></i>
+          <div class="info-box info-blue mb-3">
+            <i class="fas fa-info-circle me-2"></i>
             <strong>Image files only</strong> — Please upload documents as <strong>JPG or PNG</strong> images.
             If you have a PDF, convert it to an image first using any free online tool.
           </div>
@@ -387,7 +411,7 @@
         </div>
 
         {% else %}
-        <div class="upload-section mt-4" style="border-color: {% if application.status == 'Approved' %}#86efac{% else %}#fca5a5{% endif %}; background: {% if application.status == 'Approved' %}#f0fdf4{% else %}#fff1f2{% endif %};">
+        <div class="upload-section mt-4 {{ 'approved' if application.status == 'Approved' else 'rejected' }}">
           <h6>
             <i class="fas fa-check-circle text-success me-1"></i>
             Documents Submitted
@@ -484,7 +508,7 @@
 
     {% if application %}
     <div class="card border-0 shadow-sm mb-4">
-      <div class="card-header fw-semibold" style="background:#f8f9fa;">
+      <div class="card-header fw-semibold">
         <i class="fas fa-clipboard-check me-2 text-success"></i>My Document Status
       </div>
       <div class="card-body text-center py-4">
@@ -507,7 +531,7 @@
 
     <!-- Visa Fee Table -->
     <div class="card border-0 shadow-sm mb-4">
-      <div class="card-header fw-semibold" style="background:#f8f9fa;">
+      <div class="card-header fw-semibold">
         <i class="fas fa-money-bill-wave me-2 text-success"></i>Sample Visa Fees
       </div>
       <div class="card-body p-0">
@@ -536,7 +560,7 @@
 
     <!-- Helpful Links -->
     <div class="card border-0 shadow-sm">
-      <div class="card-header fw-semibold" style="background:#f8f9fa;">
+      <div class="card-header fw-semibold">
         <i class="fas fa-link me-2 text-primary"></i>Helpful Links
       </div>
       <div class="list-group list-group-flush">
