@@ -287,6 +287,25 @@ with app.app_context():
         db.session.rollback()
         print(f'[IUT] Default account seeding error (non-fatal): {_default_acct_err}')
 
+    # ── Prevent double-booking at the database level ────────────────────────
+    # The booking route already checks "is this slot taken?" before inserting,
+    # but that check and the insert aren't atomic — two students clicking the
+    # same slot within milliseconds of each other could both get through.
+    # A partial unique index closes that race window as a last line of
+    # defense (works on both Postgres and SQLite).
+    try:
+        from sqlalchemy import text as _idx_text
+        with db.engine.connect() as _idx_conn:
+            _idx_conn.execute(_idx_text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS ux_appointment_active_slot '
+                'ON appointment (officer_id, date, "time") '
+                "WHERE status IN ('Pending', 'Approved')"
+            ))
+            _idx_conn.commit()
+        print('[IUT] Double-booking safety index verified/created ✅')
+    except Exception as _idx_err:
+        print(f'[IUT] Double-booking index migration error (non-fatal): {_idx_err}')
+
     # ── WaitlistEntry migration: appointment_id → slot-based ─────────────────
     try:
         from sqlalchemy import text, inspect as sa_inspect
