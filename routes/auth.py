@@ -68,7 +68,7 @@ def login():
         return redirect(url_for('index'))
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
+        user = User.query.filter(db.func.lower(User.email) == form.email.data).first()
 
         # Account lockout guard
         if user and user.is_locked():
@@ -123,7 +123,7 @@ def forgot_password():
         return redirect(url_for('index'))
     form = ForgotPasswordForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
+        user = User.query.filter(db.func.lower(User.email) == form.email.data).first()
         if user:
             # Invalidate previous tokens for this user
             PasswordResetToken.query.filter_by(user_id=user.id, used=False).update({'used': True})
@@ -185,8 +185,8 @@ def reset_password(token):
 # ── Resend verification ────────────────────────────────────────────────────────
 @auth_bp.route('/resend-verification', methods=['POST'])
 def resend_verification():
-    email = request.form.get('email', '').strip()
-    user = User.query.filter_by(email=email).first()
+    email = request.form.get('email', '').strip().lower()
+    user = User.query.filter(db.func.lower(User.email) == email).first()
     if user and not user.email_verified:
         user.generate_verify_token()
         db.session.commit()
