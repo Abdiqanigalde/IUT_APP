@@ -198,7 +198,7 @@ def cancel_appointment(appointment_id):
     # Let the officer know — previously this only removed the appointment
     # from their pending list with no notification, so they'd have no idea
     # a student cancelled unless they happened to notice the count change.
-    officer_user = User.query.filter_by(email=apt.officer.email).first()
+    officer_user = User.query.filter(db.func.lower(User.email) == apt.officer.email.lower()).first()
     if officer_user:
         msg = (f"{apt.student_name} cancelled their appointment with you on "
                f"{apt.date.strftime('%d %b %Y')} at {apt.time}.")
@@ -375,7 +375,7 @@ def reschedule_appointment(appointment_id):
 
         # Notify the officer — the appointment just went back to Pending and
         # needs their re-approval, but nothing previously told them that.
-        officer_user = User.query.filter_by(email=officer.email).first()
+        officer_user = User.query.filter(db.func.lower(User.email) == officer.email.lower()).first()
         if officer_user:
             msg = (f"{apt.student_name} rescheduled their appointment with you to "
                    f"{new_date.strftime('%d %b %Y')} at {new_time}. It needs your approval again.")
@@ -850,7 +850,7 @@ def profile():
     form = ProfileForm()
     if form.validate_on_submit():
         if form.email.data != current_user.email:
-            if User.query.filter_by(email=form.email.data).first():
+            if User.query.filter(db.func.lower(User.email) == form.email.data).first():
                 flash('That email is already in use.', 'danger')
                 return render_template('profile.html', form=form)
         current_user.name           = form.name.data
