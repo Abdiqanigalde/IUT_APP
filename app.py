@@ -135,6 +135,33 @@ with app.app_context():
     except Exception as _ppu_err:
         print(f'[IUT] profile_picture_url column migration error (non-fatal): {_ppu_err}')
 
+    # ── One-time: normalize existing emails to lowercase ────────────────────
+    # New records are now lowercased at the form layer (see forms.py), and
+    # lookups compare case-insensitively as a second line of defense, but
+    # this cleans up any mixed-case rows already sitting in the database
+    # from before this fix so the data itself is consistent too.
+    try:
+        from models import AppSetting as _EmailNormAppSetting, Officer as _EmailNormOfficer
+        _email_flag = 'lowercase_emails_migration_v1'
+        if not _EmailNormAppSetting.query.get(_email_flag):
+            _n = 0
+            for _u in User.query.all():
+                if _u.email and _u.email != _u.email.lower():
+                    _u.email = _u.email.lower()
+                    _n += 1
+            for _o in _EmailNormOfficer.query.all():
+                if _o.email and _o.email != _o.email.lower():
+                    _o.email = _o.email.lower()
+                    _n += 1
+            db.session.add(_EmailNormAppSetting(key=_email_flag, value='done'))
+            db.session.commit()
+            print(f'[IUT] Normalized casing on {_n} existing email(s) ✅')
+        else:
+            print('[IUT] Email-lowercasing migration already applied — skipping.')
+    except Exception as _email_err:
+        db.session.rollback()
+        print(f'[IUT] Email normalization migration error (non-fatal): {_email_err}')
+
     # ── One-time: make dark mode the default look, matching the landing page ──
     # New signups already default to dark_mode=True (see models.User). This
     # backfills everyone who already existed before that default changed.
@@ -707,7 +734,7 @@ def inject_nav_context():
     nav_officer_record = None
     if current_user.is_authenticated and current_user.role == 'officer':
         from models import Officer
-        nav_officer_record = Officer.query.filter_by(email=current_user.email).first()
+        nav_officer_record = Officer.query.filter(db.func.lower(Officer.email) == current_user.email.lower()).first()
     return dict(nav_officer_record=nav_officer_record)
 
 
@@ -844,7 +871,7 @@ def index():
         if role == 'admin':        return redirect(url_for('admin.dashboard'))
         if role == 'officer':
             from models import Officer
-            _off = Officer.query.filter_by(email=current_user.email).first()
+            _off = Officer.query.filter(db.func.lower(Officer.email) == current_user.email.lower()).first()
             if _off and _off.handles_referred_exam:
                 return redirect(url_for('referred_exam.officer_dashboard'))
             return redirect(url_for('officer.dashboard'))
