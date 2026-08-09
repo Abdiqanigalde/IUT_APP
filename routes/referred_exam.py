@@ -29,7 +29,7 @@ def get_referred_exam_officer():
 
 
 def get_officer_record_for(user):
-    return Officer.query.filter_by(email=user.email).first()
+    return Officer.query.filter(db.func.lower(Officer.email) == user.email.lower()).first()
 
 
 def send_referred_exam_email(student, status, note='', officer=None):
