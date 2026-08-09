@@ -358,7 +358,18 @@ def reschedule_appointment(appointment_id):
         apt.time   = new_time
         apt.day    = day_name
         apt.status = 'Pending'
-        db.session.flush()
+
+        try:
+            db.session.flush()
+        except Exception as e:
+            # Same rare race as new bookings: someone else grabbed this slot
+            # between our conflict check above and this write. The DB-level
+            # unique index catches it — fail safely, not with a 500.
+            db.session.rollback()
+            logger.warning('Reschedule race condition caught for officer=%s date=%s time=%s: %s',
+                            old_officer_id, new_date, new_time, e)
+            flash('That slot was just taken by someone else. Please pick another.', 'warning')
+            return render_template('student/reschedule.html', form=form, apt=apt)
 
         _promote_waitlist(old_officer_id, old_date, old_time)
 
@@ -1176,7 +1187,21 @@ def book_calcom_submit():
         note           = 'Appointment created via modern booking flow.'
     ))
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        # Extremely rare: two students hit "book" for the same slot within
+        # the same instant and both passed the earlier availability check.
+        # The database-level unique index (see app.py) catches what the
+        # in-app check couldn't — fail safely instead of a 500 error.
+        db.session.rollback()
+        logger.warning('Booking race condition caught for officer=%s date=%s time=%s: %s',
+                        officer.id, booking_date, time_str, e)
+        waiters = WaitlistEntry.query.filter_by(
+            officer_id=officer.id, slot_date=booking_date, slot_time=time_str,
+        ).count()
+        flash(f'That slot was just taken ({waiters} waiting). Please choose another.', 'warning')
+        return redirect(url_for('student.book_calcom'))
 
     from utils import send_email, booking_confirmation_email
     send_email(
