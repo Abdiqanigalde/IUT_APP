@@ -65,7 +65,7 @@ def create_account():
             flash('Invalid role selected.', 'danger')
             return redirect(url_for('super_admin.create_account'))
 
-        if User.query.filter_by(email=email).first():
+        if User.query.filter(db.func.lower(User.email) == email.lower()).first():
             flash('An account with that email already exists.', 'danger')
             return redirect(url_for('super_admin.create_account'))
 
