@@ -24,7 +24,7 @@ def officer_required(f):
 
 def get_officer_record():
     """Get the Officer DB record linked to the current logged-in officer user."""
-    return Officer.query.filter_by(email=current_user.email).first()
+    return Officer.query.filter(db.func.lower(Officer.email) == current_user.email.lower()).first()
 
 def _get_apt_or_abort(apt_id):
     """
