@@ -1,183 +1,902 @@
-from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileAllowed
-from wtforms import (StringField, PasswordField, SubmitField, SelectField,
-                     TextAreaField, DateField, IntegerField, TimeField, BooleanField, SelectMultipleField)
-from wtforms.validators import DataRequired, Email, EqualTo, Length, ValidationError, Optional, NumberRange
-from models import User
-import re
+import os
+
+from flask import Flask, redirect, url_for, render_template, session, request as flask_request
+from flask_login import LoginManager, current_user, logout_user
+from flask_wtf.csrf import CSRFProtect
+from flask_bcrypt import Bcrypt
+from flask_migrate import Migrate
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_socketio import SocketIO, emit, join_room
+from models import db, User
+from datetime import datetime, timedelta, timezone
+
+app = Flask(__name__)
+
+# ── Config ────────────────────────────────────────────────────────────────────
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError(
+            'SECRET_KEY environment variable is required in production. '
+            'Set it in your Render Environment tab (Render can auto-generate one).'
+        )
+    print('WARNING: SECRET_KEY not set — using an insecure dev-only fallback. '
+          'This is fine for local development but must never happen in production.')
+    _secret_key = 'dev-only-insecure-secret-key-change-me'
+app.config['SECRET_KEY'] = _secret_key
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+database_url = os.environ.get(
+    'DATABASE_URL',
+    'sqlite:///' + os.path.join(basedir, 'database', 'university.db')
+)
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
+if database_url.startswith('postgresql://') and '+' not in database_url:
+    database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+
+app.config['SQLALCHEMY_DATABASE_URI']        = database_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle':  300,
+}
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB cap on any single request body (uploads: visa docs, officer photos)
+
+# ── Email (Brevo HTTP API — see utils.send_email) ──────────────────────────────
+# The app sends all mail through Brevo's HTTP API, not SMTP, because Render's
+# free tier blocks outbound SMTP ports. BREVO_API_KEY is the required env var;
+# MAIL_USERNAME is only used as the "from" address shown to recipients.
+app.config['BREVO_API_KEY'] = os.environ.get('BREVO_API_KEY', '')
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'noreply@iut-dhaka.edu')
+if not app.config['BREVO_API_KEY']:
+    print(
+        'WARNING: BREVO_API_KEY is not set. Email verification and password reset '
+        'links will not be sent — affected users will be unable to log in or '
+        'recover their password. Set BREVO_API_KEY before inviting real users.'
+    )
+
+# ── Extensions ────────────────────────────────────────────────────────────────
+csrf     = CSRFProtect(app)
+db.init_app(app)
+migrate  = Migrate(app, db)
+bcrypt   = Bcrypt(app)
+_allowed_origin = (
+    os.environ.get('APP_URL')
+    or os.environ.get('RENDER_EXTERNAL_URL')
+    or ('*' if os.environ.get('FLASK_ENV') != 'production' else None)
+)
+if _allowed_origin is None:
+    print('WARNING: Could not determine the app\'s public URL in production — Socket.IO '
+          'CORS is falling back to "*". Set APP_URL to your app\'s URL to lock this down.')
+    _allowed_origin = '*'
+socketio = SocketIO(app, cors_allowed_origins=_allowed_origin, async_mode='threading')
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "60 per hour"],
+    storage_uri="memory://",
+)
+
+login_manager = LoginManager(app)
+login_manager.login_view             = 'auth.login'
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    if exception:
+        db.session.rollback()
+    db.session.remove()
 
 
-def password_strength(form, field):
-    """Shared password policy: 8+ chars, at least one upper, one lower, one digit.
-    Skips silently on empty data so it composes cleanly with Optional()."""
-    pw = field.data or ''
-    if not pw:
-        return
-    if len(pw) < 8:
-        raise ValidationError('Password must be at least 8 characters long.')
-    if not re.search(r'[A-Z]', pw):
-        raise ValidationError('Password must contain at least one uppercase letter.')
-    if not re.search(r'[a-z]', pw):
-        raise ValidationError('Password must contain at least one lowercase letter.')
-    if not re.search(r'[0-9]', pw):
-        raise ValidationError('Password must contain at least one number.')
+# ── DB init + auto-migrations ─────────────────────────────────────────────────
+with app.app_context():
+    db_dir = os.path.join(basedir, 'database')
+    os.makedirs(db_dir, exist_ok=True)
+    db.create_all()
 
-class RegistrationForm(FlaskForm):
-    name = StringField('Full Name', validators=[DataRequired(), Length(min=2, max=100)])
-    email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password (min 8 chars, upper/lower/number)',
-                              validators=[DataRequired(), password_strength])
-    confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
-    # SECURITY: Only 'student' is offered publicly. Admin/Officer created by Super Admin only.
-    role = SelectField('Role', choices=[('student', 'Student')], validators=[DataRequired()])
-    submit = SubmitField('Sign Up')
+    # ── User.must_change_password: column self-heal (must run before ANY query
+    # touches the User table, since the super_admin check below is one) ────────
+    try:
+        from sqlalchemy import text as _mcp_text, inspect as _mcp_inspect
+        _user_cols = {c['name'] for c in _mcp_inspect(db.engine).get_columns('user')}
+        if 'must_change_password' not in _user_cols:
+            with db.engine.connect() as _mcp_conn:
+                _mcp_conn.execute(_mcp_text(
+                    'ALTER TABLE "user" ADD COLUMN must_change_password BOOLEAN DEFAULT FALSE'
+                ))
+                _mcp_conn.commit()
+            print('[IUT] user.must_change_password column added ✅')
+        else:
+            print('[IUT] user.must_change_password already exists — skipping.')
+    except Exception as _mcp_err:
+        print(f'[IUT] must_change_password column migration error (non-fatal): {_mcp_err}')
 
-    def validate_email(self, email):
-        if not email.data.lower().endswith('@iut-dhaka.edu'):
-            raise ValidationError('Only @iut-dhaka.edu email addresses are allowed.')
-        user = User.query.filter_by(email=email.data).first()
-        if user:
-            raise ValidationError('That email is already taken.')
+    # ── User.profile_picture_url: column self-heal ─────────────────────────────
+    try:
+        from sqlalchemy import text as _ppu_text, inspect as _ppu_inspect
+        _user_cols2 = {c['name'] for c in _ppu_inspect(db.engine).get_columns('user')}
+        if 'profile_picture_url' not in _user_cols2:
+            with db.engine.connect() as _ppu_conn:
+                _ppu_conn.execute(_ppu_text(
+                    'ALTER TABLE "user" ADD COLUMN profile_picture_url VARCHAR(500)'
+                ))
+                _ppu_conn.commit()
+            print('[IUT] user.profile_picture_url column added ✅')
+        else:
+            print('[IUT] user.profile_picture_url already exists — skipping.')
+    except Exception as _ppu_err:
+        print(f'[IUT] profile_picture_url column migration error (non-fatal): {_ppu_err}')
 
-class LoginForm(FlaskForm):
-    email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password', validators=[DataRequired()])
-    remember = BooleanField('Remember Me')
-    submit = SubmitField('Login')
+    # ── One-time: normalize existing emails to lowercase ────────────────────
+    # New records are now lowercased at the form layer (see forms.py), and
+    # lookups compare case-insensitively as a second line of defense, but
+    # this cleans up any mixed-case rows already sitting in the database
+    # from before this fix so the data itself is consistent too.
+    try:
+        from models import AppSetting as _EmailNormAppSetting, Officer as _EmailNormOfficer
+        _email_flag = 'lowercase_emails_migration_v1'
+        if not _EmailNormAppSetting.query.get(_email_flag):
+            _n = 0
+            for _u in User.query.all():
+                if _u.email and _u.email != _u.email.lower():
+                    _u.email = _u.email.lower()
+                    _n += 1
+            for _o in _EmailNormOfficer.query.all():
+                if _o.email and _o.email != _o.email.lower():
+                    _o.email = _o.email.lower()
+                    _n += 1
+            db.session.add(_EmailNormAppSetting(key=_email_flag, value='done'))
+            db.session.commit()
+            print(f'[IUT] Normalized casing on {_n} existing email(s) ✅')
+        else:
+            print('[IUT] Email-lowercasing migration already applied — skipping.')
+    except Exception as _email_err:
+        db.session.rollback()
+        print(f'[IUT] Email normalization migration error (non-fatal): {_email_err}')
 
-class AppointmentForm(FlaskForm):
-    student_name = StringField('Full Name', validators=[DataRequired()])
-    student_id_num = StringField('Student ID', validators=[DataRequired()])
-    department = StringField('Department', validators=[DataRequired()])
-    officer = SelectField('Officer', coerce=int, validators=[DataRequired()])
-    date = DateField('Date', validators=[DataRequired()])
-    time = SelectField('Time Slot', choices=[], validators=[DataRequired()])
-    issue = TextAreaField('Appointment Reason', validators=[DataRequired()])
-    submit = SubmitField('Book Appointment')
+    # ── One-time: make dark mode the default look, matching the landing page ──
+    # New signups already default to dark_mode=True (see models.User). This
+    # backfills everyone who already existed before that default changed.
+    # Runs exactly once, ever — gated on an AppSetting marker — so it will
+    # never re-flip anyone's dark_mode after they've toggled it themselves.
+    try:
+        from models import AppSetting as _AppSetting
+        _flag_key = 'dark_mode_default_migration_v1'
+        if not _AppSetting.query.get(_flag_key):
+            _updated = User.query.update({User.dark_mode: True})
+            db.session.add(_AppSetting(key=_flag_key, value='done'))
+            db.session.commit()
+            print(f'[IUT] Dark mode set as default for {_updated} existing user(s) ✅')
+        else:
+            print('[IUT] Dark-mode-default migration already applied — skipping.')
+    except Exception as _dm_err:
+        db.session.rollback()
+        print(f'[IUT] Dark mode default migration error (non-fatal): {_dm_err}')
 
-class RescheduleForm(FlaskForm):
-    date = DateField('New Date', validators=[DataRequired()])
-    time = SelectField('New Time Slot', choices=[], validators=[DataRequired()])
-    submit = SubmitField('Reschedule')
+    # ── Auto-create super_admin if none exists ────────────────────────────────
+    if not User.query.filter_by(role='super_admin').first():
+        from flask_bcrypt import Bcrypt as _B
+        _b = _B()
+        sa = User(
+            name='Super Admin',
+            email='superadmin@iut-dhaka.edu',
+            password=_b.generate_password_hash('SuperAdmin@2026!').decode('utf-8'),
+            role='super_admin',
+            email_verified=True,
+            is_active=True,
+            must_change_password=True,
+        )
+        db.session.add(sa)
+        db.session.commit()
+        print('[IUT] Default super_admin created: superadmin@iut-dhaka.edu / SuperAdmin@2026!')
 
-class OfficeForm(FlaskForm):
-    name = StringField('Office Name', validators=[DataRequired(), Length(max=150)],
-                        render_kw={'placeholder': 'e.g. Office of the Registrar'})
-    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
-    icon = StringField('Icon (Font Awesome class)', validators=[Optional(), Length(max=50)],
-                        render_kw={'placeholder': 'e.g. fa-building'}, default='fa-building')
-    sort_order = IntegerField('Sort Order', validators=[Optional(), NumberRange(min=0)], default=0)
-    submit = SubmitField('Save Office')
+    # ── Auto-create default demo/officer accounts if missing ──────────────────
+    # Idempotent: only ever INSERTs a row for an email that doesn't exist yet.
+    # Never updates or deletes an existing account, so anything an admin has
+    # since changed (password, name, active flag, etc.) is left alone.
+    try:
+        from flask_bcrypt import Bcrypt as _DB
+        from models import Officer as _DefOfficer
+        _db_bcrypt = _DB()
+
+        # (name, email, password, role, officer_designation_or_None, issues_handled_keywords_or_None)
+        _default_accounts = [
+            ('System Admin', 'admin@iut-dhaka.edu', 'Admin@IUT2026!', 'admin', None, None),
+            ('Prof. Dr. Md Mamun Bin Ibne Reaz', 'vc@iut-dhaka.edu', 'VC@IUT2026!', 'officer',
+             'Vice Chancellor',
+             'policy matter, scholarship approval, research collaboration, convocation, '
+             'formal complaint, disciplinary appeal, MOU, university policy, honorary meeting'),
+            ('Dr. Hissein Araby Nour', 'provc@iut-dhaka.edu', 'PROVC@IUT2026!', 'officer',
+             'Pro Vice Chancellor',
+             'academic affairs, curriculum, examination policy, faculty recruitment, '
+             'academic appeal, research funding, department coordination, academic policy'),
+            ('Visa Officer', 'visaofficer@iut-dhaka.edu', 'visaofficer@2026!', 'visa_officer', None, None),
+            ('Student', 'abdinadiif@iut-dhaka.edu', 'Abdmar716', 'student', None, None),
+            ('Dr. Mwebesa Umar', 'registrar@iut-dhaka.edu', 'Registrar@IUT2026!', 'officer',
+             'Registrar',
+             'transcript, degree certificate, provisional certificate, character certificate, '
+             'academic record, convocation registration, transfer certificate, enrollment verification'),
+            ('Engr. Noman Ahmed Khan', 'nak@iut-dhaka.edu', 'DeputyReg@IUT2026!', 'officer',
+             'Deputy Registrar',
+             'transcript, certificate, student records, enrollment certificate, academic transcript, '
+             'registration issue, degree verification'),
+            ('Abdoul-Azize Alioum', 'abdoulazize@iut-dhaka.edu', 'SrRegistrar@IUT2026!', 'officer',
+             'Sr. Assistant Registrar',
+             'admission, semester registration, course registration, student records, '
+             'enrollment, ID card, add drop course'),
+            ('Mr. Md. Mafizur Rahman', 'mafiz@iut-dhaka.edu', 'Section@IUT2026!', 'officer',
+             'Section Officer',
+             'leave application, office correspondence, form submission, document processing, '
+             'section paperwork, general inquiry'),
+            ('Mr. Md. Rafiqul Islam', 'rafiqul@iut-dhaka.edu', 'AdminOfficer@IUT2026!', 'officer',
+             'Senior Assistant Administrative Officer',
+             'administrative matter, office correspondence, staff records, general administration, '
+             'procurement, facility issue, hr matter'),
+            ('Mr. Md. Enamul Hoque', 'enamul@iut-dhaka.edu', 'Office@IUT2026!', 'officer',
+             'Sr. Office Attendant',
+             'document delivery, office support, general assistance, appointment support, errand'),
+        ]
+
+        _created_any = False
+        for _name, _email, _pw, _role, _designation, _handles in _default_accounts:
+            if User.query.filter_by(email=_email).first():
+                continue  # already exists — never touch it
+
+            _user = User(
+                name=_name,
+                email=_email,
+                password=_db_bcrypt.generate_password_hash(_pw).decode('utf-8'),
+                role=_role,
+                email_verified=True,
+                is_active=True,
+                must_change_password=False,
+            )
+            db.session.add(_user)
+
+            # Officer-role accounts need a matching Officer row (same email)
+            # so their dashboard can find their own appointments, and their
+            # "Issues Handled" keywords power the AI officer-recommendation
+            # feature (services/ai_suggestions.py).
+            if _role == 'officer' and _designation:
+                if not _DefOfficer.query.filter_by(email=_email).first():
+                    db.session.add(_DefOfficer(
+                        name=_name,
+                        designation=_designation,
+                        email=_email,
+                        handles=_handles,
+                        # Match the same Fri/Sat/Sun default used by the
+                        # Admin → Officers form, so weekends aren't bookable.
+                        recurring_off_days='4,5,6',
+                    ))
+
+            _created_any = True
+            print(f'[IUT] Default account created: {_email} / {_pw}')
+
+        if _created_any:
+            db.session.commit()
+
+        # ── One-time backfill for officers that already existed before these
+        # keyword lists / off-days defaults were added. Gated on an
+        # AppSetting marker so it runs exactly once, ever — after that, an
+        # admin is free to blank out "Issues Handled" or set an officer to
+        # "no days off" on purpose and it will stick, even across restarts.
+        from models import AppSetting as _AppSetting2
+        _backfill_flag = 'default_officer_fields_backfill_v1'
+        if not _AppSetting2.query.get(_backfill_flag):
+            _backfilled_any = False
+            for _name, _email, _pw, _role, _designation, _handles in _default_accounts:
+                if _role != 'officer' or not _handles:
+                    continue
+                _off = _DefOfficer.query.filter_by(email=_email).first()
+                if _off and not (_off.handles or '').strip():
+                    _off.handles = _handles
+                    _backfilled_any = True
+                    print(f'[IUT] Backfilled Issues Handled for {_email}')
+                if _off and not (_off.recurring_off_days or '').strip():
+                    _off.recurring_off_days = '4,5,6'
+                    _backfilled_any = True
+                    print(f'[IUT] Backfilled Recurring Off Days (Fri/Sat/Sun) for {_email}')
+            db.session.add(_AppSetting2(key=_backfill_flag, value='done'))
+            db.session.commit()
+            if _backfilled_any:
+                print('[IUT] One-time officer field backfill complete ✅')
+        else:
+            print('[IUT] Officer field backfill already applied — skipping.')
+    except Exception as _default_acct_err:
+        db.session.rollback()
+        print(f'[IUT] Default account seeding error (non-fatal): {_default_acct_err}')
+
+    # ── Prevent double-booking at the database level ────────────────────────
+    # The booking route already checks "is this slot taken?" before inserting,
+    # but that check and the insert aren't atomic — two students clicking the
+    # same slot within milliseconds of each other could both get through.
+    # A partial unique index closes that race window as a last line of
+    # defense (works on both Postgres and SQLite).
+    try:
+        from sqlalchemy import text as _idx_text
+        with db.engine.connect() as _idx_conn:
+            _idx_conn.execute(_idx_text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS ux_appointment_active_slot '
+                'ON appointment (officer_id, date, "time") '
+                "WHERE status IN ('Pending', 'Approved')"
+            ))
+            _idx_conn.commit()
+        print('[IUT] Double-booking safety index verified/created ✅')
+    except Exception as _idx_err:
+        print(f'[IUT] Double-booking index migration error (non-fatal): {_idx_err}')
+
+    # ── WaitlistEntry migration: appointment_id → slot-based ─────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect
+        inspector  = sa_inspect(db.engine)
+        cols       = {c['name'] for c in inspector.get_columns('waitlist_entry')}
+        is_pg      = 'postgresql' in str(db.engine.url)
+
+        if 'officer_id' in cols:
+            print('[IUT] WaitlistEntry already migrated — skipping.')
+
+        elif 'appointment_id' in cols:
+            print('[IUT] Migrating WaitlistEntry to slot-based schema…')
+            with db.engine.connect() as conn:
+                conn.execute(text("ALTER TABLE waitlist_entry ADD COLUMN officer_id INTEGER"))
+                conn.execute(text("ALTER TABLE waitlist_entry ADD COLUMN slot_date DATE"))
+                conn.execute(text("ALTER TABLE waitlist_entry ADD COLUMN slot_time VARCHAR(30)"))
+                conn.commit()
+
+                if is_pg:
+                    conn.execute(text("""
+                        UPDATE waitlist_entry we
+                        SET  officer_id = a.officer_id,
+                             slot_date  = a.date,
+                             slot_time  = a.time
+                        FROM appointment a
+                        WHERE a.id = we.appointment_id
+                    """))
+                else:
+                    conn.execute(text("""
+                        UPDATE waitlist_entry
+                        SET officer_id = (
+                                SELECT officer_id FROM appointment
+                                WHERE appointment.id = waitlist_entry.appointment_id),
+                            slot_date  = (
+                                SELECT date FROM appointment
+                                WHERE appointment.id = waitlist_entry.appointment_id),
+                            slot_time  = (
+                                SELECT time FROM appointment
+                                WHERE appointment.id = waitlist_entry.appointment_id)
+                        WHERE appointment_id IS NOT NULL
+                    """))
+                conn.commit()
+
+                deleted = conn.execute(text(
+                    "DELETE FROM waitlist_entry WHERE officer_id IS NULL"
+                )).rowcount
+                if deleted:
+                    print(f'[IUT] Removed {deleted} orphaned waitlist entries.')
+                conn.commit()
+
+                if is_pg:
+                    conn.execute(text("ALTER TABLE waitlist_entry DROP COLUMN IF EXISTS appointment_id"))
+                    conn.execute(text("""
+                        ALTER TABLE waitlist_entry
+                        ADD CONSTRAINT uq_waitlist_student_slot
+                        UNIQUE (officer_id, slot_date, slot_time, user_id)
+                    """))
+                else:
+                    conn.execute(text("""
+                        CREATE TABLE waitlist_entry_new (
+                            id             INTEGER PRIMARY KEY,
+                            officer_id     INTEGER NOT NULL REFERENCES officer(id),
+                            slot_date      DATE    NOT NULL,
+                            slot_time      VARCHAR(30) NOT NULL,
+                            user_id        INTEGER NOT NULL REFERENCES user(id),
+                            student_name   VARCHAR(100) NOT NULL,
+                            student_id_num VARCHAR(50)  NOT NULL,
+                            department     VARCHAR(100) NOT NULL,
+                            issue          TEXT    NOT NULL,
+                            joined_at      DATETIME,
+                            UNIQUE (officer_id, slot_date, slot_time, user_id)
+                        )
+                    """))
+                    conn.execute(text("""
+                        INSERT INTO waitlist_entry_new
+                            (id, officer_id, slot_date, slot_time, user_id,
+                             student_name, student_id_num, department, issue, joined_at)
+                        SELECT
+                            id, officer_id, slot_date, slot_time, user_id,
+                            student_name, student_id_num, department, issue, joined_at
+                        FROM waitlist_entry
+                        WHERE officer_id IS NOT NULL
+                    """))
+                    conn.execute(text("DROP TABLE waitlist_entry"))
+                    conn.execute(text("ALTER TABLE waitlist_entry_new RENAME TO waitlist_entry"))
+                conn.commit()
+
+            print('[IUT] WaitlistEntry migration complete ✅')
+
+        else:
+            print('[IUT] WaitlistEntry table is new — no migration needed.')
+
+    except Exception as _mig_err:
+        print(f'[IUT] WaitlistEntry migration error (non-fatal): {_mig_err}')
+
+    # ── Cal.com migration: new columns + appointment_history table ────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect2
+        inspector2 = sa_inspect2(db.engine)
+        is_pg2     = 'postgresql' in str(db.engine.url)
+
+        apt_cols = {c['name'] for c in inspector2.get_columns('appointment')}
+        new_cols = {
+            'duration':     'INTEGER DEFAULT 15',
+            'notes':        'TEXT',
+            'meeting_type': "VARCHAR(50) DEFAULT 'in_person'",
+            'timezone':     "VARCHAR(50) DEFAULT 'Asia/Dhaka'",
+            'location':     'VARCHAR(255)',
+        }
+        with db.engine.connect() as conn:
+            for col, definition in new_cols.items():
+                if col not in apt_cols:
+                    conn.execute(text(f'ALTER TABLE appointment ADD COLUMN {col} {definition}'))
+                    print(f'[IUT] Cal.com migration: added appointment.{col}')
+            conn.commit()
+
+        all_tables = inspector2.get_table_names()
+        if 'appointment_history' not in all_tables:
+            with db.engine.connect() as conn:
+                if is_pg2:
+                    conn.execute(text('''
+                        CREATE TABLE appointment_history (
+                            id             SERIAL PRIMARY KEY,
+                            appointment_id INTEGER NOT NULL REFERENCES appointment(id),
+                            action         VARCHAR(50) NOT NULL,
+                            old_value      TEXT,
+                            new_value      TEXT,
+                            changed_by     INTEGER REFERENCES "user"(id),
+                            note           TEXT,
+                            timestamp      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    '''))
+                else:
+                    conn.execute(text('''
+                        CREATE TABLE appointment_history (
+                            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                            appointment_id INTEGER NOT NULL REFERENCES appointment(id),
+                            action         VARCHAR(50) NOT NULL,
+                            old_value      TEXT,
+                            new_value      TEXT,
+                            changed_by     INTEGER REFERENCES user(id),
+                            note           TEXT,
+                            timestamp      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    '''))
+                conn.commit()
+            print('[IUT] Cal.com migration: created appointment_history table ✅')
+        else:
+            print('[IUT] Cal.com migration: appointment_history already exists — skipping.')
+
+    except Exception as _calcom_err:
+        print(f'[IUT] Cal.com migration error (non-fatal): {_calcom_err}')
+
+    # ── officer_id nullable migration ─────────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect3
+        inspector3 = sa_inspect3(db.engine)
+        is_pg3     = 'postgresql' in str(db.engine.url)
+
+        if is_pg3:
+            with db.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'appointment'
+                    AND column_name  = 'officer_id'
+                """)).fetchone()
+
+                if result and result[0] == 'NO':
+                    conn.execute(text(
+                        'ALTER TABLE appointment ALTER COLUMN officer_id DROP NOT NULL'
+                    ))
+                    conn.commit()
+                    print('[IUT] officer_id nullable migration: done ✅')
+                else:
+                    print('[IUT] officer_id nullable migration: already applied — skipping.')
+        else:
+            print('[IUT] officer_id nullable migration: SQLite — skipping (handled by model).')
+
+    except Exception as _nullable_err:
+        print(f'[IUT] officer_id nullable migration error (non-fatal): {_nullable_err}')
+
+    # ── visa_application table migration ──────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect4
+        inspector4  = sa_inspect4(db.engine)
+        all_tables4 = inspector4.get_table_names()
+        if 'visa_application' not in all_tables4:
+            db.create_all()
+            print('[IUT] visa_application table created ✅')
+        else:
+            print('[IUT] visa_application table already exists — skipping.')
+    except Exception as _visa_err:
+        print(f'[IUT] visa_application migration error (non-fatal): {_visa_err}')
+
+    # ── GlobalHoliday table migration ─────────────────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect5
+        inspector5  = sa_inspect5(db.engine)
+        all_tables5 = inspector5.get_table_names()
+        is_pg5      = 'postgresql' in str(db.engine.url)
+
+        if 'global_holiday' not in all_tables5:
+            db.create_all()
+            print('[IUT] global_holiday table created ✅')
+        else:
+            print('[IUT] global_holiday table already exists — skipping.')
+
+        # Ensure reason + created_by columns exist
+        holiday_cols = {c['name'] for c in inspector5.get_columns('global_holiday')}
+        with db.engine.connect() as conn:
+            if 'reason' not in holiday_cols:
+                conn.execute(text('ALTER TABLE global_holiday ADD COLUMN reason VARCHAR(255)'))
+                conn.commit()
+                print('[IUT] global_holiday: added reason column ✅')
+            if 'created_by' not in holiday_cols:
+                ref = 'REFERENCES "user"(id)' if is_pg5 else 'REFERENCES user(id)'
+                conn.execute(text(f'ALTER TABLE global_holiday ADD COLUMN created_by INTEGER {ref}'))
+                conn.commit()
+                print('[IUT] global_holiday: added created_by column ✅')
+
+    except Exception as _holiday_err:
+        print(f'[IUT] global_holiday migration error (non-fatal): {_holiday_err}')
+
+    # ── Office table + column self-heal migration ───────────────────────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect6
+        from models import Office
+
+        inspector6  = sa_inspect6(db.engine)
+        all_tables6 = inspector6.get_table_names()
+
+        if 'office' not in all_tables6:
+            db.create_all()
+            print('[IUT] office table created ✅')
+        else:
+            print('[IUT] office table already exists — checking columns...')
+
+        # Re-inspect (table may have just been created above) and add ANY
+        # column that's missing, regardless of why it's missing. This makes
+        # the migration self-healing even if the table was created earlier
+        # with an incomplete schema.
+        office_cols6 = {c['name'] for c in sa_inspect6(db.engine).get_columns('office')}
+        office_column_defs = {
+            'slug':        "VARCHAR(150)",
+            'description': "TEXT",
+            'icon':        "VARCHAR(50) DEFAULT 'fa-building'",
+            'sort_order':  "INTEGER DEFAULT 0",
+            'is_active':   "BOOLEAN DEFAULT TRUE",
+        }
+        for col_name, col_def in office_column_defs.items():
+            if col_name not in office_cols6:
+                with db.engine.connect() as conn:
+                    conn.execute(text(f'ALTER TABLE office ADD COLUMN {col_name} {col_def}'))
+                    conn.commit()
+                print(f'[IUT] office.{col_name} column added ✅')
+
+        # Backfill slug for any office rows where it's missing (NULL/empty),
+        # generating a unique slug from the office name.
+        with db.engine.connect() as conn:
+            rows = conn.execute(text('SELECT id, name, slug FROM office')).fetchall()
+            used_slugs = {row.slug for row in rows if row.slug}
+            for row in rows:
+                if not row.slug:
+                    base = ''.join(ch if ch.isalnum() else '-' for ch in (row.name or 'office').strip().lower())
+                    while '--' in base:
+                        base = base.replace('--', '-')
+                    base = base.strip('-') or 'office'
+                    new_slug, n = base, 1
+                    while new_slug in used_slugs:
+                        n += 1
+                        new_slug = f'{base}-{n}'
+                    used_slugs.add(new_slug)
+                    conn.execute(text('UPDATE office SET slug = :slug WHERE id = :id'), {'slug': new_slug, 'id': row.id})
+            conn.commit()
+        print('[IUT] office.slug backfilled where missing ✅')
+
+        officer_cols6 = {c['name'] for c in sa_inspect6(db.engine).get_columns('officer')}
+        if 'office_id' not in officer_cols6:
+            with db.engine.connect() as conn:
+                conn.execute(text('ALTER TABLE officer ADD COLUMN office_id INTEGER'))
+                conn.commit()
+            print('[IUT] officer.office_id column added ✅')
+        else:
+            print('[IUT] officer.office_id already exists — skipping.')
+
+        # One-time seed: create a default "Office of the Registrar" and try to
+        # backfill any existing officer that doesn't have an office yet, based
+        # on simple keyword matching against their designation/room. This never
+        # overwrites an office_id that's already set.
+        if Office.query.count() == 0:
+            seed_offices = [
+                Office(name='Office of the Vice Chancellor',     slug='vc-office',     sort_order=1),
+                Office(name='Office of the Pro Vice Chancellor', slug='pro-vc-office', sort_order=2),
+                Office(name='Office of the Registrar',           slug='registrar-office', sort_order=3),
+            ]
+            db.session.add_all(seed_offices)
+            db.session.commit()
+            print('[IUT] Seeded default offices ✅')
+
+            vc_off  = Office.query.filter_by(slug='vc-office').first()
+            pvc_off = Office.query.filter_by(slug='pro-vc-office').first()
+            reg_off = Office.query.filter_by(slug='registrar-office').first()
+
+            from models import Officer as _Officer
+            for off in _Officer.query.filter_by(office_id=None).all():
+                text_blob = f"{off.designation} {off.room or ''}".lower()
+                if 'pro vice chancellor' in text_blob or 'pro vc' in text_blob:
+                    off.office_id = pvc_off.id
+                elif 'vice chancellor' in text_blob or 'vc' in text_blob:
+                    off.office_id = vc_off.id
+                elif 'registrar' in text_blob:
+                    off.office_id = reg_off.id
+            db.session.commit()
+            print('[IUT] Backfilled existing officers into default offices ✅')
+
+    except Exception as _office_err:
+        print(f'[IUT] office migration error (non-fatal): {_office_err}')
+
+    # ── Referred Exam Registration: table + officer flag self-heal ─────────────
+    try:
+        from sqlalchemy import text, inspect as sa_inspect7
+        from models import Officer as _Officer7, ReferredExamRegistration as _RER7
+
+        inspector7  = sa_inspect7(db.engine)
+        all_tables7 = inspector7.get_table_names()
+
+        if 'referred_exam_registration' not in all_tables7:
+            db.create_all()
+            print('[IUT] referred_exam_registration table created ✅')
+
+        officer_cols7 = {c['name'] for c in sa_inspect7(db.engine).get_columns('officer')}
+        if 'handles_referred_exam' not in officer_cols7:
+            with db.engine.connect() as conn:
+                conn.execute(text('ALTER TABLE officer ADD COLUMN handles_referred_exam BOOLEAN DEFAULT FALSE'))
+                conn.commit()
+            print('[IUT] officer.handles_referred_exam column added ✅')
+        else:
+            print('[IUT] officer.handles_referred_exam already exists — skipping.')
+
+        # One-time auto-detect: if no officer is flagged yet, try to match
+        # "Md. Enamul Hoque" by name so the feature works out of the box.
+        # This never overwrites a flag an admin has already set.
+        if not _Officer7.query.filter_by(handles_referred_exam=True).first():
+            candidate = _Officer7.query.filter(
+                _Officer7.name.ilike('%enamul hoque%')
+            ).first()
+            if candidate:
+                candidate.handles_referred_exam = True
+                db.session.commit()
+                print(f'[IUT] Auto-flagged "{candidate.name}" as the referred exam officer ✅')
+
+    except Exception as _rer_err:
+        print(f'[IUT] referred exam migration error (non-fatal): {_rer_err}')
+
+    # ── Flag any super_admin still on the published default password ──────────
+    try:
+        from flask_bcrypt import Bcrypt as _MCPBcrypt
+        _mcp_b = _MCPBcrypt()
+        still_on_default = [
+            u for u in User.query.filter_by(role='super_admin').all()
+            if not u.must_change_password
+            and _mcp_b.check_password_hash(u.password, 'SuperAdmin@2026!')
+        ]
+        for u in still_on_default:
+            u.must_change_password = True
+        if still_on_default:
+            db.session.commit()
+            print(f'[IUT] Flagged {len(still_on_default)} super_admin(s) still on the '
+                  f'default password for a forced change ✅')
+    except Exception as _mcp_flag_err:
+        print(f'[IUT] default-password flagging error (non-fatal): {_mcp_flag_err}')
+
+    # ── Performance indexes on existing tables ──────────────────────────────────
+    # create_all() only creates indexes for brand-new tables — these tables
+    # already existed, so we add the indexes explicitly. IF NOT EXISTS makes
+    # this safe to run on every boot.
+    try:
+        from sqlalchemy import text
+        index_statements = [
+            'CREATE INDEX IF NOT EXISTS ix_appointment_date ON appointment (date)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_officer_id ON appointment (officer_id)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_status ON appointment (status)',
+            'CREATE INDEX IF NOT EXISTS ix_appointment_user_id ON appointment (user_id)',
+            'CREATE INDEX IF NOT EXISTS ix_officer_office_id ON officer (office_id)',
+        ]
+        with db.engine.connect() as conn:
+            for stmt in index_statements:
+                conn.execute(text(stmt))
+            conn.commit()
+        print('[IUT] Performance indexes verified/created ✅')
+    except Exception as _index_err:
+        print(f'[IUT] index migration error (non-fatal): {_index_err}')
 
 
-class OfficerForm(FlaskForm):
-    name = StringField('Officer Name', validators=[DataRequired()])
-    designation = StringField('Designation', validators=[DataRequired()])
-    work_start = StringField('Work Start (HH:MM)', validators=[DataRequired()], default='08:00')
-    work_end = StringField('Work End (HH:MM)', validators=[DataRequired()], default='17:00')
-    daily_limit = IntegerField('Max Appointments/Day (0=unlimited)', validators=[NumberRange(min=0)], default=0)
-    recurring_off_days = SelectMultipleField('Recurring Off Days',
-        choices=[('0','Monday'),('1','Tuesday'),('2','Wednesday'),('3','Thursday'),
-                 ('4','Friday'),('5','Saturday'),('6','Sunday')],
-        default=['4','5','6'])
-    submit = SubmitField('Save Officer')
+# ── Nav context (lets layout.html show officer-specific links) ───────────────
+@app.context_processor
+def inject_nav_context():
+    nav_officer_record = None
+    if current_user.is_authenticated and current_user.role == 'officer':
+        from models import Officer
+        nav_officer_record = Officer.query.filter(db.func.lower(Officer.email) == current_user.email.lower()).first()
+    return dict(nav_officer_record=nav_officer_record)
 
-class WorkingHoursForm(FlaskForm):
-    weekday = SelectField('Day', coerce=int,
-        choices=[(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday')])
-    start_time = StringField('Start (HH:MM)', validators=[DataRequired()], default='08:00')
-    end_time = StringField('End (HH:MM)', validators=[DataRequired()], default='17:00')
-    submit = SubmitField('Save Hours')
 
-class ProfileForm(FlaskForm):
-    name = StringField('Full Name', validators=[DataRequired()])
-    email = StringField('Email', validators=[DataRequired(), Email()])
-    student_id_num = StringField('Student ID', validators=[Optional()])
-    department = StringField('Department', validators=[Optional()])
-    profile_picture = FileField('Profile Picture',
-        validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'webp'], 'Images only (jpg, jpeg, png, webp)!')])
-    remove_profile_picture = BooleanField('Remove current profile picture', validators=[Optional()])
-    current_password = PasswordField('Current Password', validators=[Optional()])
-    new_password = PasswordField('New Password (min 8 chars, upper/lower/number)',
-                                  validators=[Optional(), password_strength])
-    confirm_new_password = PasswordField('Confirm New Password',
-        validators=[EqualTo('new_password', message='New passwords must match.')])
-    submit = SubmitField('Update Profile')
+# ── Force password change ─────────────────────────────────────────────────────
+@app.before_request
+def enforce_password_change():
+    if current_user.is_authenticated and getattr(current_user, 'must_change_password', False):
+        allowed = {'auth.force_change_password', 'auth.logout', 'static'}
+        if flask_request.endpoint not in allowed:
+            return redirect(url_for('auth.force_change_password'))
 
-    def validate_email(self, email):
-        if not email.data.lower().endswith('@iut-dhaka.edu'):
-            raise ValidationError('Only @iut-dhaka.edu email addresses are allowed.')
 
-class ForgotPasswordForm(FlaskForm):
-    email = StringField('Email Address', validators=[DataRequired(), Email()])
-    submit = SubmitField('Send Reset Link')
+# ── Session timeout ───────────────────────────────────────────────────────────
+@app.before_request
+def check_session_timeout():
+    if current_user.is_authenticated:
+        last = session.get('last_activity')
+        now  = datetime.now(timezone.utc).timestamp()
+        if last and (now - last) > 30 * 60:
+            logout_user()
+            session.clear()
+            from flask import flash
+            flash('Session expired due to inactivity.', 'warning')
+            return redirect(url_for('auth.login'))
+        session['last_activity'] = now
+        session.permanent = True
 
-class ResetPasswordForm(FlaskForm):
-    new_password = PasswordField('New Password (min 8 chars, upper/lower/number)',
-                                  validators=[DataRequired(), password_strength])
-    confirm_password = PasswordField('Confirm Password',
-        validators=[DataRequired(), EqualTo('new_password', message='Passwords must match.')])
-    submit = SubmitField('Reset Password')
 
-class UnavailabilityForm(FlaskForm):
-    start_date = DateField('From Date', validators=[DataRequired()])
-    end_date = DateField('To Date', validators=[DataRequired()])
-    reason = StringField('Reason', validators=[DataRequired(), Length(max=255)])
-    submit = SubmitField('Mark Unavailable')
+# ── Time slot generator ───────────────────────────────────────────────────────
+def generate_time_slots(start_str="08:00", end_str="17:00"):
+    slots, fmt = [], "%H:%M"
+    current    = datetime.strptime(start_str, fmt)
+    end        = datetime.strptime(end_str,   fmt)
+    while current < end:
+        nxt = current + timedelta(hours=1)
+        slots.append(f"{current.strftime('%I:%M %p')} - {nxt.strftime('%I:%M %p')}")
+        current = nxt
+    return slots
 
-class OfficerUnavailabilityForm(FlaskForm):
-    mode = SelectField('Type', choices=[('range', 'Single date range'),
-                                         ('recurring', 'Recurring weekly')],
-                        default='range')
-    start_date = DateField('From Date', validators=[DataRequired()])
-    end_date = DateField('To Date', validators=[DataRequired()])
-    recurring_weekday = SelectField('Repeats every', coerce=int,
-        choices=[(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),
-                 (4,'Friday'),(5,'Saturday'),(6,'Sunday')],
-        validators=[Optional()])
-    reason = StringField('Reason', validators=[DataRequired(), Length(max=255)])
-    submit = SubmitField('Mark Unavailable')
 
-class BulkUnavailabilityForm(FlaskForm):
-    officer_ids = SelectMultipleField('Officers', coerce=int, validators=[DataRequired()])
-    mode = SelectField('Type', choices=[('range', 'Single date range'),
-                                         ('recurring', 'Recurring weekly')],
-                        default='range')
-    start_date = DateField('From Date', validators=[DataRequired()])
-    end_date = DateField('To Date', validators=[DataRequired()])
-    recurring_weekday = SelectField('Repeats every', coerce=int,
-        choices=[(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),
-                 (4,'Friday'),(5,'Saturday'),(6,'Sunday')],
-        validators=[Optional()])
-    reason = StringField('Reason', validators=[DataRequired(), Length(max=255)])
-    submit = SubmitField('Apply Unavailability')
+# ── QR code generator ─────────────────────────────────────────────────────────
+def generate_qr_data(appointment_id, token):
+    import io, base64
+    data = f"APT-{appointment_id}-{token}"
+    try:
+        import qrcode
+        qr = qrcode.QRCode(version=1, box_size=8, border=2)
+        qr.add_data(data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        b64 = base64.b64encode(buf.getvalue()).decode()
+    except ImportError:
+        try:
+            from PIL import Image, ImageDraw
+            img  = Image.new('RGB', (200, 200), color='white')
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([10, 10, 190, 190], outline='black', width=3)
+            draw.text((20, 90), data[:20], fill='black')
+            buf  = io.BytesIO()
+            img.save(buf, format='PNG')
+            b64  = base64.b64encode(buf.getvalue()).decode()
+        except ImportError:
+            b64 = ""
+    return data, b64
 
-class OfficerProfileForm(FlaskForm):
-    name = StringField('Officer Name', validators=[DataRequired()])
-    designation = StringField('Designation', validators=[DataRequired()])
-    office = SelectField('Office / Department', coerce=int, validators=[Optional()])
-    bio = TextAreaField('Bio / About', validators=[Optional(), Length(max=500)])
-    handles = StringField('Issues Handled (comma-separated)', validators=[Optional(), Length(max=300)])
-    email = StringField('Office Email', validators=[Optional(), Email()])
-    login_email = StringField('Login Email (for officer portal)', validators=[DataRequired(), Email()])
-    login_password = PasswordField('Login Password (min 8 chars, upper/lower/number)',
-                                    validators=[DataRequired(), password_strength])
-    photo = FileField('Upload Photo', validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'webp'], 'Images only (jpg, jpeg, png, webp)!')])
-    photo_url = StringField('Or Photo Filename (legacy — leave blank if uploading above)', validators=[Optional(), Length(max=255)])
-    room = StringField('Room / Office Location', validators=[Optional()])
-    work_start = StringField('Work Start (HH:MM)', validators=[DataRequired()], default='08:00')
-    work_end = StringField('Work End (HH:MM)', validators=[DataRequired()], default='17:00')
-    daily_limit = IntegerField('Max Appointments/Day (0=unlimited)', validators=[NumberRange(min=0)], default=0)
-    recurring_off_days = SelectMultipleField('Recurring Off Days',
-        choices=[('0','Monday'),('1','Tuesday'),('2','Wednesday'),('3','Thursday'),
-                 ('4','Friday'),('5','Saturday'),('6','Sunday')],
-        default=['4','5','6'])
-    submit = SubmitField('Save Officer')
 
-class RejectNoteForm(FlaskForm):
-    rejection_note = TextAreaField('Reason for Rejection', validators=[DataRequired(), Length(max=300)])
-    submit = SubmitField('Confirm Rejection')
+# ── Socket.IO events ──────────────────────────────────────────────────────────
+@socketio.on('join')
+def on_join(data):
+    room = str(data.get('user_id', ''))
+    if room:
+        join_room(room)
 
-class BulkActionForm(FlaskForm):
-    action = SelectField('Action', choices=[('Approved','Approve Selected'),('Rejected','Reject Selected')])
-    submit = SubmitField('Apply')
+def push_status_update(user_id, appointment_id, status, message):
+    socketio.emit('appointment_update', {
+        'appointment_id': appointment_id,
+        'status':         status,
+        'message':        message,
+        'timestamp':      datetime.now(timezone.utc).isoformat(),
+    }, room=str(user_id))
+
+
+# ── Error handlers ────────────────────────────────────────────────────────────
+@app.errorhandler(404)
+def not_found(e):    return render_template('errors/404.html'), 404
+
+@app.errorhandler(500)
+def server_error(e): return render_template('errors/500.html'), 500
+
+@app.errorhandler(403)
+def forbidden(e):    return render_template('errors/403.html'), 403
+
+@app.errorhandler(429)
+def rate_limited(e): return render_template('errors/429.html'), 429
+
+@app.errorhandler(413)
+def too_large(e):    return render_template('errors/413.html'), 413
+
+
+# ── Blueprints ────────────────────────────────────────────────────────────────
+from routes.auth        import auth_bp
+from routes.student     import student_bp
+from routes.admin       import admin_bp
+from routes.officer     import officer_bp
+from routes.super_admin import super_admin_bp
+from routes.visa        import visa_bp
+from routes.referred_exam import referred_exam_bp
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(student_bp)
+app.register_blueprint(admin_bp)
+app.register_blueprint(officer_bp)
+app.register_blueprint(super_admin_bp)
+app.register_blueprint(visa_bp)
+app.register_blueprint(referred_exam_bp)
+
+limiter.limit("10 per minute")(auth_bp)
+
+# The cron-triggered reminders endpoint is called machine-to-machine (GitHub
+# Actions) with no browser session, so it can't carry a CSRF token — it's
+# authenticated via a shared secret header instead (see routes/admin.py).
+from routes.admin import cron_send_reminders as _cron_send_reminders_view
+csrf.exempt(_cron_send_reminders_view)
+
+
+# ── Root route ────────────────────────────────────────────────────────────────
+@app.route('/')
+def index():
+    if current_user.is_authenticated:
+        role = current_user.role
+        if role == 'super_admin':  return redirect(url_for('super_admin.dashboard'))
+        if role == 'admin':        return redirect(url_for('admin.dashboard'))
+        if role == 'officer':
+            from models import Officer
+            _off = Officer.query.filter(db.func.lower(Officer.email) == current_user.email.lower()).first()
+            if _off and _off.handles_referred_exam:
+                return redirect(url_for('referred_exam.officer_dashboard'))
+            return redirect(url_for('officer.dashboard'))
+        if role == 'visa_officer': return redirect(url_for('visa.visa_officer_dashboard'))
+        return redirect(url_for('student.dashboard'))
+    return render_template('home.html')
+
+
+# ── Live notifications API ────────────────────────────────────────────────────
+@app.route('/api/notifications/unread-count')
+def unread_count():
+    from models import Notification
+    if not current_user.is_authenticated:
+        return {'count': 0}
+    try:
+        count = Notification.query.filter_by(
+            user_id=current_user.id, is_read=False
+        ).count()
+        return {'count': count}
+    except Exception:
+        db.session.rollback()
+        return {'count': 0}
+
+
+if __name__ == '__main__':
+    port  = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)
