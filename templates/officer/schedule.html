@@ -255,6 +255,11 @@
 {% endmacro %}
 
 {% macro action_dropdown(apt, prefix) %}
+{% if apt.status == 'Completed' %}
+<span class="text-muted small" title="This appointment is completed and locked from further changes.">
+  <i class="fas fa-lock me-1"></i>Locked
+</span>
+{% else %}
 <div class="d-flex align-items-center gap-1">
 
   {# Quick approve/reject for pending #}
@@ -374,6 +379,7 @@
 {{ noshow_modal(apt, prefix) }}
 {{ report_modal(apt, prefix) }}
 {{ cancel_modal(apt, prefix) }}
+{% endif %}
 {% endmacro %}
 
 
