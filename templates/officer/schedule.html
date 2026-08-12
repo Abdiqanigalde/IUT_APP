@@ -207,6 +207,31 @@
 </div>
 {% endmacro %}
 
+{% macro complete_modal(apt, prefix) %}
+<div class="modal fade" id="complete{{ prefix }}{{ apt.id }}" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title"><i class="fas fa-check-circle me-2 text-success"></i>Mark as Completed</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <form action="{{ url_for('officer.mark_completed', apt_id=apt.id) }}" method="POST">
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="text-muted small">This will mark the appointment as completed.</p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Notes (optional)</label>
+          <textarea name="note" class="form-control" rows="2" placeholder="Any notes about this meeting..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success btn-sm"><i class="fas fa-check-circle me-1"></i>Mark Completed</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endmacro %}
+
 {% macro reject_modal(apt, prefix) %}
 <div class="modal fade" id="reject{{ prefix }}{{ apt.id }}" tabindex="-1">
   <div class="modal-dialog modal-sm"><div class="modal-content">
@@ -310,6 +335,12 @@
         </a>
       </li>
       <li>
+        <a class="dropdown-item text-success" href="#"
+           data-bs-toggle="modal" data-bs-target="#complete{{ prefix }}{{ apt.id }}">
+          <i class="fas fa-check-circle me-2"></i>Mark as completed
+        </a>
+      </li>
+      <li>
         <a class="dropdown-item" href="#"
            data-bs-toggle="modal" data-bs-target="#noshow{{ prefix }}{{ apt.id }}">
           <i class="fas fa-user-slash me-2 text-muted"></i>Mark as no-show
@@ -339,6 +370,7 @@
 {{ req_reschedule_modal(apt, prefix) }}
 {{ location_modal(apt, prefix) }}
 {{ guests_modal(apt, prefix) }}
+{{ complete_modal(apt, prefix) }}
 {{ noshow_modal(apt, prefix) }}
 {{ report_modal(apt, prefix) }}
 {{ cancel_modal(apt, prefix) }}
@@ -353,6 +385,47 @@
   <h4><i class="fas fa-calendar-alt me-2 text-info"></i>My Upcoming Schedule</h4>
   <a href="{{ url_for('officer.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Dashboard</a>
 </div>
+
+{% if overdue %}
+<div class="card mb-4 border-warning">
+  <div class="card-header bg-warning bg-opacity-25">
+    <strong><i class="fas fa-exclamation-triangle me-2 text-warning"></i>Needs Action — Overdue</strong>
+    <small class="text-muted">(date has passed, still not marked completed/rejected/no-show)</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Student</th>
+            <th>ID</th>
+            <th>Dept</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for apt in overdue %}
+          <tr>
+            <td class="text-nowrap">{{ apt.date.strftime('%a %d %b') }}</td>
+            <td class="text-nowrap">{{ apt.time }}</td>
+            <td>{{ apt.student_name }}</td>
+            <td><small class="text-muted">{{ apt.student_id_num }}</small></td>
+            <td><small>{{ apt.department }}</small></td>
+            <td><small>{{ apt.issue[:50] }}{% if apt.issue|length > 50 %}…{% endif %}</small></td>
+            <td><span class="badge badge-status status-{{ apt.status|lower }}">{{ apt.status }}</span></td>
+            <td class="text-nowrap">{{ action_dropdown(apt, 'O') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="card">
   <div class="card-body p-0">
