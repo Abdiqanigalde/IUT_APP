@@ -24,7 +24,7 @@ def officer_required(f):
 
 def get_officer_record():
     """Get the Officer DB record linked to the current logged-in officer user."""
-    return Officer.query.filter(db.func.lower(Officer.email) == current_user.email.lower()).first()
+    return Officer.query.filter_by(email=current_user.email).first()
 
 def _get_apt_or_abort(apt_id):
     """
@@ -170,10 +170,22 @@ def schedule():
     if not officer:
         flash('No officer profile found.', 'warning')
         return redirect(url_for('officer.dashboard'))
+    today = datetime.now(timezone.utc).date()
     apts = Appointment.query.filter_by(officer_id=officer.id)\
-        .filter(Appointment.date >= datetime.now(timezone.utc).date())\
+        .filter(Appointment.date >= today)\
         .order_by(Appointment.date, Appointment.time).all()
-    return render_template('officer/schedule.html', officer=officer, appointments=apts)
+
+    # Appointments whose date has already passed but were never approved/
+    # rejected/completed/etc. — these would otherwise vanish from every
+    # officer view (dashboard only shows "today", this page only shows
+    # "upcoming"), leaving no way to ever mark them completed.
+    overdue = Appointment.query.filter_by(officer_id=officer.id)\
+        .filter(Appointment.date < today)\
+        .filter(Appointment.status.in_(('Pending', 'Approved')))\
+        .order_by(Appointment.date.desc(), Appointment.time).all()
+
+    return render_template('officer/schedule.html', officer=officer,
+                           appointments=apts, overdue=overdue)
 
 
 # ── Self-service unavailability ─────────────────────────────────────────────────
