@@ -38,6 +38,17 @@ def _get_apt_or_abort(apt_id):
         return None, None
     return apt, officer
 
+def _blocked_if_completed(apt):
+    """
+    Once an appointment is Completed it is locked — no further edits,
+    reschedules, guest changes, no-show/cancel/report actions, etc.
+    Returns True (and flashes + the caller should redirect) if blocked.
+    """
+    if apt.status == 'Completed':
+        flash('This appointment is already completed and can no longer be changed.', 'warning')
+        return True
+    return False
+
 # ── Dashboard ──────────────────────────────────────────────────────────────────
 @officer_bp.route('/')
 @login_required
@@ -75,6 +86,8 @@ def approve(apt_id):
     if not apt or (officer and apt.officer_id != officer.id):
         flash('Not authorized.', 'danger')
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
     apt.status = 'Approved'
     msg = f"Your appointment with {apt.officer.name} on {apt.date.strftime('%d %b %Y')} at {apt.time} has been Approved."
     db.session.add(Notification(user_id=apt.user_id, message=msg))
@@ -97,6 +110,8 @@ def reject(apt_id):
     if not apt or (officer and apt.officer_id != officer.id):
         flash('Not authorized.', 'danger')
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
     note = request.form.get('note', '').strip()
     apt.status = 'Rejected'
     apt.rejection_note = note
@@ -280,6 +295,8 @@ def reschedule(apt_id):
     apt, officer = _get_apt_or_abort(apt_id)
     if not apt:
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
 
     new_date_str = request.form.get('new_date', '').strip()
     new_time     = request.form.get('new_time', '').strip()
@@ -334,6 +351,8 @@ def request_reschedule(apt_id):
     apt, officer = _get_apt_or_abort(apt_id)
     if not apt:
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
 
     message = request.form.get('message', '').strip()
 
@@ -375,6 +394,8 @@ def edit_location(apt_id):
     apt, officer = _get_apt_or_abort(apt_id)
     if not apt:
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
 
     location     = request.form.get('location', '').strip()
     meeting_link = request.form.get('meeting_link', '').strip()
@@ -423,6 +444,8 @@ def add_guests(apt_id):
     apt, officer = _get_apt_or_abort(apt_id)
     if not apt:
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
 
     raw_guests = request.form.get('guests', '').strip()
     guest_note = request.form.get('guest_note', '').strip()
@@ -528,6 +551,8 @@ def mark_noshow(apt_id):
     apt, officer = _get_apt_or_abort(apt_id)
     if not apt:
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
 
     note = request.form.get('note', '').strip()
 
@@ -572,6 +597,8 @@ def report_booking(apt_id):
     apt, officer = _get_apt_or_abort(apt_id)
     if not apt:
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
 
     reason  = request.form.get('report_reason', '').strip()
     details = request.form.get('report_details', '').strip()
@@ -614,6 +641,8 @@ def cancel_appointment(apt_id):
     apt, officer = _get_apt_or_abort(apt_id)
     if not apt:
         return redirect(url_for('officer.dashboard'))
+    if _blocked_if_completed(apt):
+        return redirect(request.referrer or url_for('officer.dashboard'))
 
     reason = request.form.get('cancel_reason', '').strip()
 
