@@ -382,6 +382,10 @@ def manage_officers():
             log_action('officer_added', f"Added {officer.name} ({officer.designation}) with login {form.login_email.data}")
             flash(f'Officer added{office_note}! Login: {form.login_email.data} / Password: {form.login_password.data}', 'success')
             return redirect(url_for('admin.manage_officers'))
+    elif request.method == 'POST':
+        first_field, first_errors = next(iter(form.errors.items()))
+        label = 'Session' if first_field == 'csrf_token' else form[first_field].label.text
+        flash(f'Officer not saved — {label}: {first_errors[0]}', 'danger')
 
     officers = Officer.query.all()
     today    = datetime.now(timezone.utc).date()
