@@ -14,6 +14,26 @@
       <h5 class="fw-bold mb-3">Add New Officer</h5>
       <form method="POST" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
+
+        {% if form.errors %}
+        <div class="alert alert-danger py-2 px-3 small mb-3">
+          <strong>Officer not saved — please fix:</strong>
+          <ul class="mb-0 ps-3">
+            {% for field_name, field_errors in form.errors.items() %}
+              {% for err in field_errors %}
+                <li>
+                  {%- if field_name == 'csrf_token' -%}
+                    Session expired — reload the page and try again.
+                  {%- else -%}
+                    {{ form[field_name].label.text }}: {{ err }}
+                  {%- endif -%}
+                </li>
+              {% endfor %}
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
         <div class="mb-2">
           {{ form.name.label(class="form-label small fw-semibold") }}
           {{ form.name(class="form-control form-control-sm") }}
@@ -44,7 +64,10 @@
         </div>
         <div class="mb-2">
           {{ form.login_password.label(class="form-label small fw-semibold") }}
-          {{ form.login_password(class="form-control form-control-sm", placeholder="Min 6 characters") }}
+          {{ form.login_password(class="form-control form-control-sm" ~ (" is-invalid" if form.login_password.errors else ""), placeholder="Min 8 chars, 1 upper, 1 lower, 1 number") }}
+          {% if form.login_password.errors %}
+          <small class="text-danger d-block">{{ form.login_password.errors[0] }}</small>
+          {% endif %}
         </div>
         <hr class="my-2">
         <div class="mb-2">
